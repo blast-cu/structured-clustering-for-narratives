@@ -32,4 +32,4 @@ sleep 1m
 
 host_ip=$(hostname -i)
 
-python3 ./annotate.py -c "immigration" --host $host_ip
+python3 ./annotate.py -c "immigration" --host $host_ip --workers 8 --save_interval 50

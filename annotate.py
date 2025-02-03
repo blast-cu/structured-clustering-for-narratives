@@ -64,11 +64,7 @@ class Annotator:
             pickle.dump(annotated_docs, f)
 
     def annotate(self, event_chain):
-        system_prompt = """You are an annotator. Using character theory and affect control theory, you will perform 
-        the following annotation tasks on the following text. 1. Is there an immigrant character (or 
-        similar) role in the text? Or does the text talk about immigrants? If yes, are they framed as a hero, 
-        a victim, or a threat? If no, your answer should be neutral. 2. Is the stance of the text pro or anti 
-        immigration? If neither, your answer should be neutral. Your answer should be in JSON using the following format: {"role": "hero/victim/threat/neutral", "stance": "pro/anti/neutral", "reason": "your reasoning for your answers"}. Do not generate anything else."""
+        system_prompt = """You are an annotator. Using character theory and affect control theory, you will perform the following annotation tasks on the following text. 1. Is there an immigrant character (or similar) role in the text? Or does the text talk about immigrants? If yes, are they framed as a hero, a victim, or a threat? If no, your answer should be neutral. 2. Is the stance of the text pro or anti immigration? If neither, your answer should be neutral. Your answer should be in JSON using the following format: {"role": "hero/victim/threat/neutral", "stance": "pro/anti/neutral", "reason": "your reasoning for your answers"}. Do not generate anything else."""
 
         user_prompt = f"Text: \"{event_chain}\""
         role_response = ["hero", "victim", "threat", "neutral"]
