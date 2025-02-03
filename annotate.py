@@ -99,8 +99,8 @@ if __name__ == '__main__':
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('--host', metavar='HOST')
     parser.add_argument('--port', default=9999, metavar='PORT')
-    parser.add_argument('--workers', type=int, default=4, metavar='WORKERS', help='Number of worker threads')
-    parser.add_argument('--save_interval', type=int, default=10, metavar='SAVE_INTERVAL',
+    parser.add_argument('--workers', type=int, default=8, metavar='WORKERS', help='Number of worker threads')
+    parser.add_argument('--save_interval', type=int, default=100, metavar='SAVE_INTERVAL',
                         help='Number of documents to process before saving progress')
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
