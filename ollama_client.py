@@ -19,9 +19,10 @@ class Ollama:
             {"role": "user", "content": user_prompt}
         ]
 
-        options = ollama.Options()
-        options.seed = self.seed
-        options.temperature = self.temperature
+        options: ollama.Options = {
+            "seed": self.seed,
+            "temperature": self.temperature
+        }
 
         response = self.client.chat(self.model,
                                     messages=messages,

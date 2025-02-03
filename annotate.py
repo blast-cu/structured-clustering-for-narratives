@@ -4,7 +4,7 @@ import pickle
 import concurrent.futures
 from ollama_client import Ollama
 from pyhocon import ConfigFactory
-from tqdm import tqdm  # Import tqdm for progress bar
+from tqdm import tqdm
 
 
 class Annotator:
@@ -17,11 +17,9 @@ class Annotator:
         self.config = config
 
     def process_documents(self, num_workers, save_interval):
-        # Load the data from the pickle file
         with open(self.config["event_chains_path"], 'rb') as f:
             data = pickle.load(f)
 
-        # Prepare for concurrent processing of the documents
         annotated_docs = {}
         total_docs = len(data)
 
@@ -62,7 +60,6 @@ class Annotator:
         return doc
 
     def save_progress(self, annotated_docs):
-        # Save the current progress to the file
         with open(self.config["annotated_event_chains_path"], 'wb') as f:
             pickle.dump(annotated_docs, f)
 
