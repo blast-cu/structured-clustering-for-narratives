@@ -13,11 +13,13 @@ emb_idx_to_chain_idx = {}
 
 
 def process_chains(annotated_docs):
+    idx = 0
     for doc_idx, doc in annotated_docs.items():
         for chain_idx, chain in doc['event_chains'].items():
             if 'CAUSAL' in chain['event_chain']:
-                event_chains[chain_idx] = chain
-                event_chain_to_doc[chain_idx] = doc_idx
+                event_chains[idx] = chain
+                event_chain_to_doc[idx] = doc_idx
+                idx += 1
 
 def generate_constraints():
     for chain_idx_1, chain_1 in tqdm(event_chains.items()):

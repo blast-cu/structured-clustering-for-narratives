@@ -174,7 +174,7 @@ class PCKMeans:
             "violations": self.get_violation_statistics()
         }
 
-        with open('../' + config["clusters_path"], 'wb') as f:
+        with open(config["clusters_path"], 'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 
@@ -185,15 +185,15 @@ if __name__ == '__main__':
     parser.add_argument('-i', metavar='MAX_ITER', default=100, type=int, help='maximum number of iterations')
 
     args = parser.parse_args()
-    config = ConfigFactory.parse_file('../config.conf')[args.c]
+    config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    print("Loading data for clustering...")
+    print("Loading data for clustering...", flush=True)
 
     # Load data
-    with open('../' + config["cluster_embs_path"], 'wb') as f:
+    with open(config["cluster_embs_path"], 'rb') as f:
         data = pickle.load(f)
 
-    print("Clustering...")
+    print("Clustering...", flush=True)
 
     pckmeans = PCKMeans(n_clusters=args.k, random_state=config['seed'])
     pckmeans.fit(data['embs'], data['constraints'])
