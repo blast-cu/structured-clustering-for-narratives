@@ -181,3 +181,4 @@ logs/
 
 # Ollama log file
 ollama_log*.txt
+/data/immigration/annotated_event_chains.pickle
