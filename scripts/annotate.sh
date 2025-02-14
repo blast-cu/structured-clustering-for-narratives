@@ -18,11 +18,10 @@ source ~/.bashrc
 module load anaconda
 conda activate event
 
-mkdir -p "$SLURM_SCRATCH/cache/HF/transformers"
-mkdir -p "$SLURM_SCRATCH/cache/HF/datasets"
+mkdir -p "$SLURM_SCRATCH/cache/HF"
 
-export TRANSFORMERS_CACHE="$SLURM_SCRATCH/cache/HF/transformers"
-export HF_DATASETS_CACHE="$SLURM_SCRATCH/cache/HF/datasets"
+export HF_HOME="$SLURM_SCRATCH/cache/HF"
+export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 echo "Starting up Ollama server"
 nohup ollama serve > ollama_log_3.txt 2>&1 &
@@ -32,4 +31,4 @@ sleep 1m
 
 host_ip=$(hostname -i)
 
-python3 ./annotate.py -c "immigration" --host $host_ip --workers 8 --save_interval 50
+python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50

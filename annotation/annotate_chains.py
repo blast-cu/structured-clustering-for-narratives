@@ -2,9 +2,11 @@ import argparse
 import json
 import pickle
 import concurrent.futures
-from ollama_client import Ollama
+
 from pyhocon import ConfigFactory
 from tqdm import tqdm
+
+from utils.ollama_client import Ollama
 
 
 class Annotator:
