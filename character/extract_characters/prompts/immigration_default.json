@@ -1,5 +1,5 @@
 {
-    "system_prompt": "Instruction: You are an annotator who is developing a dataset for the task of identifying main characters in a news article. Your answer should be in JSON using the following format: {'characters': ['character0', 'character1', ... ]}.",
+    "system_prompt": "Instruction: You are an annotator who is developing a dataset for the task of identifying main characters in a news article. Your answer should be in JSON using the following format: {'characters': ['character0', 'character1', ... ]}. Do not generate anything else.",
     "question": "Please list all important characters present in the below article about immigration.",
     "demos": [
         {
