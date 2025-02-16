@@ -22,7 +22,7 @@ class CharacterAnnotate:
         self.logger.setLevel(logging.INFO)
 
         self.config = args
-        print(f"Config: {vars(self.config)}")
+        # print(f"Config: {vars(self.config)}")
         self.ollama_client = Ollama(
             self.config.host,
             self.config.port,
