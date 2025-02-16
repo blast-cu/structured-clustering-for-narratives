@@ -1,0 +1,7 @@
+---
+out_filename: immigration-llama3.json
+dataset: immigration_processed_corpus.json
+model: Llama-3.3-70B-Instruct-Q4_K_M.gguf
+temperature: 1.0
+top_p: 0.95
+max_length: 4096
