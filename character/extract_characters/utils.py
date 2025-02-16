@@ -92,6 +92,7 @@ class CharacterAnnotate:
         out_path = os.path.join(self.data_path, "results", self.config.out_filename)
         with open(out_path, "w") as f:
             json.dump(final_output, f, indent=4)
+        exit()  # temp exit for testing.
 
     def annotate(self, messages):
 
