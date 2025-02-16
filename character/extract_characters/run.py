@@ -9,7 +9,6 @@ from character.extract_characters.utils import \
     CharacterAnnotate
 
 
-
 # set up logging.
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -68,6 +67,18 @@ if __name__ == "__main__":
         type=str,
         default=None,
         help="Name of config file in prompt/configs directory"
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of workers to use for parallel processing."
+    )
+    parser.add_argument(
+        "--save_interval",
+        type=int,
+        default=50,
+        help="The interval at which to save the results."
     )
     parser.add_argument(
         "--host",
