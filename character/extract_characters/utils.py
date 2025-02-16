@@ -16,7 +16,7 @@ Includes functions for loading models, generating text, and formatting data.
 
 class CharacterAnnotate:
 
-    def __init__(self, args, prompt_data, articles, data_path, logger=True):
+    def __init__(self, args, prompt_data, articles, data_path):
         self.config = args
         self.ollama_client = Ollama(
             self.config.host,
@@ -109,7 +109,7 @@ class CharacterAnnotate:
                     messages=messages,
                     options=options
                 )['message']['content']
-                print(response)
+                self.logger.info(f"Response: {response}")
 
                 try:
                     response = json.loads(response)
@@ -117,15 +117,15 @@ class CharacterAnnotate:
                         if type(response['character']) is list:
                             return response
                         else:
-                            print("Invalid response. Please try again.", flush=True)
+                            self.logger.exception("Invalid response. Please try again.", flush=True)
                             raise Exception("Invalid response.")
                 except Exception as e:
-                    print("Exception: " + str(e), flush=True)
-                    print("Invalid response. Please try again.", flush=True)
+                    self.logger.exception("Exception: " + str(e), flush=True)
+                    self.logger.exception("Invalid response. Please try again.", flush=True)
                     retry_count += 1
             except Exception as e:
-                print("Exception: " + str(e), flush=True)
-                print("Ollama Error. Please try again.", flush=True)
+                self.logger.exception("Exception: " + str(e), flush=True)
+                self.logger.exception("Ollama Error. Please try again.", flush=True)
                 retry_count += 1
         return None
 
@@ -160,10 +160,10 @@ class CharacterAnnotate:
                         # Save annotated_docs at regular intervals
                         if processed_count % save_interval == 0:
                             self.save_results(annotated_docs)
-                            print(f"Progress saved after processing {processed_count} documents.", flush=True)
+                            self.logger.info(f"Progress saved after processing {processed_count} documents.", flush=True)
 
                     except Exception as e:
-                        print(f"Error processing document {doc_idx}: {e}", flush=True)
+                        self.logger.exception(f"Error processing document {doc_idx}: {e}", flush=True)
         self.save_results(annotated_docs)
 
     def process_article(self, article_idx, article):

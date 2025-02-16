@@ -30,6 +30,10 @@ Tested with:
 
 def main(args):
 
+    if args.out_filename is None:
+        data_file = args.dataset.split(".")[0]
+        args.out_filename = f"{data_file}_processed.json"
+
     # ensure the results directory exists.
     os.makedirs(os.path.join(DATA_PATH, "results"), exist_ok=True)
 
@@ -82,7 +86,6 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--out_filename",
-        default="initial_exploration.json",
         type=str,
         help="The name of the output file to save the results in DATA_PATH/results."
     )
