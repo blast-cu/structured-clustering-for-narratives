@@ -81,15 +81,11 @@ if __name__ == "__main__":
         help="The interval at which to save the results."
     )
     parser.add_argument(
-        "--host",
-        default="localhost",
-        type=str,
+       '--host', metavar='HOST',
         help="The host for the Ollama API."
     )
     parser.add_argument(
-        "--port",
-        default=8000,
-        type=int,
+        default=9999, metavar='PORT',
         help="The port for the Ollama API."
     )
     parser.add_argument(
