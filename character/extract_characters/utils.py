@@ -21,7 +21,7 @@ class CharacterAnnotate:
         self.ollama_client = Ollama(
             self.config.host,
             self.config.port,
-            self.config.model_id,
+            self.config.model,
             seed=self.config.seed,
             temperature=self.config.temperature
         )
