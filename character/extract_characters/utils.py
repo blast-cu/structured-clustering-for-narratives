@@ -14,10 +14,15 @@ Utility functions for the initial exploration of the data with an LLM.
 Includes functions for loading models, generating text, and formatting data.
 """
 
+
 class CharacterAnnotate:
 
     def __init__(self, args, prompt_data, articles, data_path):
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(logging.INFO)
+
         self.config = args
+        self.logger.info(f"Config: {vars(self.config)}")
         self.ollama_client = Ollama(
             self.config.host,
             self.config.port,
@@ -30,9 +35,7 @@ class CharacterAnnotate:
         self.get_head_msgs()
         self.data_path = data_path
 
-        if logger:
-            self.logger = logging.getLogger(__name__)
-            self.logger.setLevel(logging.INFO)
+        
 
     def format_article(self, article_data: dict) -> dict:
         """
