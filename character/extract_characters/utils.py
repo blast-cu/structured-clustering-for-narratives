@@ -193,9 +193,6 @@ class CharacterAnnotate:
         messages.append({"role": "user", "content": user_prompt})
 
         annotation = self.annotate(messages)
-        if annotation is None:
-            article["characters"] = None
-        else:
-            article["characters"] = annotation["character"]
+        article["characters"] = annotation["character"]
 
         return article
