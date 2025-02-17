@@ -4,7 +4,8 @@ import ollama
 
 class Ollama:
     def __init__(self, host, port, model, seed=42, temperature=1.0):
-        server_host = f"{host}:{port}"
+        # server_host = f"{host}:{port}"
+        server_host = "127.0.0.1:11434"
         print(f"Connecting to Ollama server at {server_host}")
         self.client = ollama.Client(server_host)
 
