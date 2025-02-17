@@ -22,13 +22,14 @@ class CharacterAnnotate:
         self.logger.setLevel(logging.INFO)
 
         self.config = args
+        self.model = 'llama3.3'
         # print(f"Config: {vars(self.config)}")
         self.ollama_client = Ollama(
             self.config.host,
             self.config.port,
             # self.config.model,
             # 'llama3:70b-instruct-q4_0',
-            'llama3.3',
+            self.model,
             seed=self.config.seed,
             temperature=self.config.temperature
         )
