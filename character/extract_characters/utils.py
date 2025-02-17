@@ -193,6 +193,6 @@ class CharacterAnnotate:
         messages.append({"role": "user", "content": user_prompt})
 
         annotation = self.annotate(messages)
-        article["characters"] = annotation["character"]
+        article["characters"] = annotation
 
         return article
