@@ -121,8 +121,7 @@ class CharacterAnnotate:
                     messages=messages,
                     options=options
                 )['message']['content']
-                self.logger.info(f"Response: {response}")
-                exit()
+                # self.logger.info(f"Response: {response}")
                 # TODO: implement this https://github.com/ollama/ollama/releases/tag/v0.5.0
                 try:
                     response = json.loads(response)
@@ -186,5 +185,9 @@ class CharacterAnnotate:
         messages.append({"role": "user", "content": user_prompt})
 
         annotation = self.annotate(messages)
-        article["characters"] = annotation["character"]
+        if annotation is None:
+            article["characters"] = None
+        else:
+            article["characters"] = annotation["character"]
+
         return article
