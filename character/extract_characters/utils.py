@@ -78,7 +78,7 @@ class CharacterAnnotate:
 
                 head_user_prompt.append(user_turn)
                 head_user_prompt.append(assissant_turn)
-            self.head_msgs.extend(self.head_user_prompt)
+            self.head_msgs.extend(head_user_prompt)
 
     def save_results(self, out_list: list):
         """
