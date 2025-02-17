@@ -55,7 +55,7 @@ def main(args):
         dataset,
         DATA_PATH
     )
-    annotator.process_articles(args.num_workers, args.save_interval)
+    annotator.process_articles(args.workers, args.save_interval)
 
 
 if __name__ == "__main__":
