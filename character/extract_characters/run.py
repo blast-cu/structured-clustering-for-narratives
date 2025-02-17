@@ -97,10 +97,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--model",
-        # default='llama3:70b-instruct-q4_0',
-        default="llama3.3",
+        default='llama3:70b-instruct-q4_0',
         type=str,
-        help="HF model id of the LLM to use for the initial exploration.",
+        help="ollama model id of the LLM to use for the initial exploration.",
     )
     parser.add_argument(
         "--max_length",

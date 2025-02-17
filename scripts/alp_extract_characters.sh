@@ -1,13 +1,11 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --partition=aa100
 #SBATCH --mail-user=alle5715@colorado.edu
 #SBATCH --mail-type=ALL
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=32
 #SBATCH --time=1-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
 #SBATCH --gres=gpu:2
 #SBATCH --mem=50G
 #SBATCH --job-name=annotate_characters

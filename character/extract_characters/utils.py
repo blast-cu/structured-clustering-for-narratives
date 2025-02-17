@@ -9,6 +9,8 @@ import logging
 from utils.ollama_client import Ollama
 import ollama
 
+from pydantic import BaseModel
+
 """
 Utility functions for the initial exploration of the data with an LLM.
 Includes functions for loading models, generating text, and formatting data.
@@ -17,16 +19,16 @@ Includes functions for loading models, generating text, and formatting data.
 
 class CharacterAnnotate:
 
-    def __init__(self, args, prompt_data, articles, data_path):
+    def __init__(self, args, prompt_data, articles, data_path, logger=None):
 
         # set up logging.
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
+        if logger is None:
+            logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+            logger = logging.getLogger(__name__)
+            logger.setLevel(logging.INFO)
         self.logger = logger
 
         self.config = args
-        # host = f"http://{args.host}"
 
         # initialize the ollama client.
         self.ollama_client = Ollama(
