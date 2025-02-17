@@ -26,11 +26,11 @@ class CharacterAnnotate:
         self.logger = logger
 
         self.config = args
-        host = f"http://{args.host}"
+        # host = f"http://{args.host}"
 
         # initialize the ollama client.
         self.ollama_client = Ollama(
-            host,
+            args.host,
             args.port,
             args.model,
             seed=args.seed,
