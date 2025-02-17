@@ -117,7 +117,7 @@ class CharacterAnnotate:
                 }
 
                 response = self.ollama_client.client.chat(
-                    self.model,
+                    self.config.model,
                     messages=messages,
                     options=options
                 )['message']['content']
