@@ -28,7 +28,8 @@ class CharacterAnnotate:
         self.config = args
 
         # initialize the ollama client.
-        server_host = f"{self.config.host}:{self.config.port}"
+        # server_host = f"{self.config.host}:{self.config.port}"
+        server_host = f"{os.environ.get('OLLAMA_HOST')}:{os.environ.get('OLLAMA_PORT')}"
         self.client = ollama.Client(server_host)
         logger.info(f"Connected to Ollama server at {server_host}")
 

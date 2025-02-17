@@ -28,7 +28,17 @@ nohup ollama serve > ollama_log_3.txt 2>&1 &
 
 echo "Waiting for Ollama server to start"
 sleep 1m
-ollama pull llama3.3
+
+# echo "Pulling Llama"
+# ollama pull llama3:70b-instruct-q4_0
+
+# https://github.com/ollama/ollama/blob/main/docs/api.md#pull-a-model
+curl http://localhost:11434/api/pull -d '{"model": "llama3:70b-instruct-q4_0"}'
+
+export OLLAMA_NUM_PARALLEL=1
+
+echo $OLLAMA_HOST
+echo $OLLAMA_PORT
 
 host_ip=$(hostname -i)
 
