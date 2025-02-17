@@ -6,7 +6,7 @@ import json
 import concurrent
 import logging
 
-from utils.ollama_client import Ollama
+# from utils.ollama_client import Ollama
 import ollama
 
 """
@@ -18,26 +18,28 @@ Includes functions for loading models, generating text, and formatting data.
 class CharacterAnnotate:
 
     def __init__(self, args, prompt_data, articles, data_path):
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
+
+        # set up logging.
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        logger = logging.getLogger(__name__)
+        logger.setLevel(logging.INFO)
+        self.logger = logger
 
         self.config = args
-        self.model = 'llama2'
-        # print(f"Config: {vars(self.config)}")
-        self.ollama_client = Ollama(
-            self.config.host,
-            self.config.port,
-            # self.config.model,
-            # 'llama3:70b-instruct-q4_0',
-            self.model,
-            seed=self.config.seed,
-            temperature=self.config.temperature
-        )
+
+        # initialize the ollama client.
+        server_host = f"{self.config.host}:{self.config.port}"
+        self.client = ollama.Client(server_host)
+        logger.info(f"Connected to Ollama server at {server_host}")
+
+        logger.info(f"Pulled model {self.config.model}")
+        ollama.pull(self.config.model)
+
         self.prompt_data = prompt_data
         self.articles = articles
         self.get_head_msgs()
         self.data_path = data_path
-        print("Initialized Ollama client.")
+        logger.info("Initialized Ollama client.")
 
     def format_article(self, article_data: dict) -> dict:
         """
