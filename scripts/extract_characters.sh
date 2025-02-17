@@ -29,15 +29,5 @@ nohup ollama serve > ollama_log_3.txt 2>&1 &
 echo "Waiting for Ollama server to start"
 sleep 1m
 
-# echo "Pulling Llama"
-# ollama pull llama3:70b-instruct-q4_0
-
-echo "Pulling Llama via curl"
-# https://github.com/ollama/ollama/blob/main/docs/api.md#pull-a-model
-curl http://10.225.8.160:9999/api/pull -d '{"model": "llama3:70b-instruct-q4_0"}'
-
-
-
-# host_ip=$(hostname -i)
-
-# python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --port 11434
+host_ip=$(hostname -i)
+python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --port 11434

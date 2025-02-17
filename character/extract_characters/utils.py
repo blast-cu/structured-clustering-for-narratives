@@ -6,7 +6,7 @@ import json
 import concurrent
 import logging
 
-# from utils.ollama_client import Ollama
+from utils.ollama_client import Ollama
 import ollama
 
 """
@@ -28,13 +28,13 @@ class CharacterAnnotate:
         self.config = args
 
         # initialize the ollama client.
-        # server_host = f"{self.config.host}:{self.config.port}"
-        server_host = f"{os.environ.get('OLLAMA_HOST')}:{os.environ.get('OLLAMA_PORT')}"
-        self.client = ollama.Client(server_host)
-        logger.info(f"Connected to Ollama server at {server_host}")
-
-        logger.info(f"Pulled model {self.config.model}")
-        ollama.pull(self.config.model)
+        self.ollama_client = Ollama(
+            args.host,
+            args.port,
+            args.model,
+            seed=args.seed,
+            temperature=args.temperature
+        )
 
         self.prompt_data = prompt_data
         self.articles = articles
@@ -120,6 +120,7 @@ class CharacterAnnotate:
                 )['message']['content']
                 self.logger.info(f"Response: {response}")
                 exit()
+                # TODO: implement this https://github.com/ollama/ollama/releases/tag/v0.5.0
                 try:
                     response = json.loads(response)
                     if 'character' in response:
