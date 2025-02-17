@@ -116,7 +116,7 @@ class CharacterAnnotate:
                     options=options
                 )['message']['content']
                 self.logger.info(f"Response: {response}")
-
+                exit()
                 try:
                     response = json.loads(response)
                     if 'character' in response:
