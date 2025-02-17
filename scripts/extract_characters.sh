@@ -25,6 +25,7 @@ export PYTHONPATH=/scratch/alpine/alle5715/structured-clustering-for-narratives
 
 echo "Starting up Ollama server"
 nohup ollama serve > ollama_log_3.txt 2>&1 &
+ollama pull llama3.3
 
 echo "Waiting for Ollama server to start"
 sleep 1m
