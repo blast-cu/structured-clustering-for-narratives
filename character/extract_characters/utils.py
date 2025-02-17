@@ -122,7 +122,8 @@ class CharacterAnnotate:
                 response = self.ollama_client.client.chat(
                     self.config.model,
                     messages=messages,
-                    options=options
+                    options=options,
+                    format=self.Characters.model_json_schema()
                 )
                 # )['message']['content']
                 # self.logger.info(f"Response: {response}")
