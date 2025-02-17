@@ -25,13 +25,11 @@ export PYTHONPATH=/scratch/alpine/alle5715/structured-clustering-for-narratives
 
 echo "Starting up Ollama server"
 nohup ollama serve > ollama_log_3.txt 2>&1 &
-ollama pull llama3.3
 
 echo "Waiting for Ollama server to start"
 sleep 1m
+ollama pull llama3.3
 
 host_ip=$(hostname -i)
 
 python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --port 11434
-
-systemctl stop ollama
