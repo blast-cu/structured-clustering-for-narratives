@@ -11,9 +11,9 @@ class Ollama:
         self.model = model
         self.seed = seed
         self.temperature = temperature
-        # print(f"Ollama client initialized with model: {model}")
+        print(f"Ollama client initialized with model: {model}")
 
-        # ollama.pull("llama3.3")
+        ollama.pull("llama3.3")
 
     def chat(self, system_prompt="", user_prompt=""):
         messages = [
