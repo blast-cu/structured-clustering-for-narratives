@@ -16,7 +16,7 @@
 source ~/.bashrc
 
 module load anaconda
-# conda activate characters
+conda activate characters
 
 mkdir -p "$SLURM_SCRATCH/cache/HF"
 
