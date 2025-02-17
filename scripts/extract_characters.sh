@@ -45,6 +45,6 @@ curl http://localhost:11434/api/pull -d '{"model": "llama3:70b-instruct-q4_0"}'
 
 
 
-host_ip=$(hostname -i)
+# host_ip=$(hostname -i)
 
-python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --port 11434
+# python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --port 11434
