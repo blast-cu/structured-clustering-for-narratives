@@ -123,15 +123,15 @@ class CharacterAnnotate:
                         if type(response['character']) is list:
                             return response
                         else:
-                            self.logger.exception("Invalid response. Please try again.", flush=True)
+                            self.logger.exception("Invalid response. Please try again.")
                             raise Exception("Invalid response.")
                 except Exception as e:
-                    self.logger.exception("Exception: " + str(e), flush=True)
-                    self.logger.exception("Invalid response. Please try again.", flush=True)
+                    self.logger.exception("Exception: " + str(e))
+                    self.logger.exception("Invalid response. Please try again.")
                     retry_count += 1
             except Exception as e:
-                self.logger.exception("Exception: " + str(e), flush=True)
-                self.logger.exception("Ollama Error. Please try again.", flush=True)
+                self.logger.exception("Exception: " + str(e))
+                self.logger.exception("Ollama Error. Please try again.")
                 retry_count += 1
         return None
 
@@ -166,10 +166,10 @@ class CharacterAnnotate:
                         # Save annotated_docs at regular intervals
                         if processed_count % save_interval == 0:
                             self.save_results(annotated_docs)
-                            self.logger.info(f"Progress saved after processing {processed_count} documents.", flush=True)
+                            self.logger.info(f"Progress saved after processing {processed_count} documents.")
 
                     except Exception as e:
-                        self.logger.exception(f"Error processing document {doc_idx}: {e}", flush=True)
+                        self.logger.exception(f"Error processing document {doc_idx}: {e}")
         self.save_results(annotated_docs)
 
     def process_article(self, article_idx, article):
