@@ -30,6 +30,6 @@ echo "Waiting for Ollama server to start"
 sleep 1m
 
 host_ip=$(hostname -i)
-curl http://$host_ip:11434/api/pull -d '{"model": "llama3.2"}'
+curl http://$host_ip:9999/api/pull -d '{"model": "llama3.2"}'
 
 # python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50
