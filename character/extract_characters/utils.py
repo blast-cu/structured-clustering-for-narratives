@@ -37,8 +37,7 @@ class CharacterAnnotate:
         self.articles = articles
         self.get_head_msgs()
         self.data_path = data_path
-
-        
+        print("Initialized Ollama client.")
 
     def format_article(self, article_data: dict) -> dict:
         """
