@@ -19,10 +19,8 @@ module load anaconda
 conda activate characters
 
 mkdir -p "$SLURM_SCRATCH/cache/HF"
-mkdir -p "$SLURM_SCRATCH/cache/ollama"
 
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
-export OLLAMA_MODELS="$SLURM_SCRATCH/cache/ollama"
 export PYTHONPATH=/scratch/alpine/alle5715/structured-clustering-for-narratives
 
 echo "Starting up Ollama server"
@@ -34,10 +32,9 @@ sleep 1m
 # echo "Pulling Llama"
 # ollama pull llama3:70b-instruct-q4_0
 
-export OLLAMA_NUM_PARALLEL=1
 echo "Pulling Llama via curl"
 # https://github.com/ollama/ollama/blob/main/docs/api.md#pull-a-model
-curl 127.0.0.1:11434/api/pull -d '{"model": "llama3.3"}'
+curl http://10.225.8.160:9999/api/pull -d '{"model": "llama3:70b-instruct-q4_0"}'
 
 
 
