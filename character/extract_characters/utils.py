@@ -121,6 +121,7 @@ class CharacterAnnotate:
                     messages=messages,
                     options=options
                 )['message']['content']
+                self.logger.info(f"Response: {response}")
                 # self.logger.info(f"Response: {response}")
                 # TODO: implement this https://github.com/ollama/ollama/releases/tag/v0.5.0
                 try:
@@ -144,6 +145,7 @@ class CharacterAnnotate:
     def process_articles(self, num_workers, save_interval):
 
         data = {}
+        self.logger.info("Formatting articles.")
         for article_id, article_data in tqdm(self.articles.items()):
             entry = self.format_article(article_data)
             data[article_id] = entry
@@ -152,6 +154,7 @@ class CharacterAnnotate:
         total_docs = len(data)
 
         # Use a ThreadPoolExecutor for parallel processing
+        self.logger.info(f"Processing documents with {num_workers} workers.")  
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
             futures = {executor.submit(self.process_article, article_id, article): article_id for article_id, article in data.items()}
 
