@@ -22,7 +22,7 @@ class CharacterAnnotate:
         self.logger.setLevel(logging.INFO)
 
         self.config = args
-        self.model = 'llama3.3'
+        self.model = 'llama2'
         # print(f"Config: {vars(self.config)}")
         self.ollama_client = Ollama(
             self.config.host,
