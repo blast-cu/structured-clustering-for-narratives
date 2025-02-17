@@ -31,4 +31,4 @@ sleep 1m
 
 host_ip=$(hostname -i)
 
-python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50 --port 11434
+python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50
