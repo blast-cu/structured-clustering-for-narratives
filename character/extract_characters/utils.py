@@ -19,6 +19,9 @@ Includes functions for loading models, generating text, and formatting data.
 
 class CharacterAnnotate:
 
+    class Characters(BaseModel):
+        characters: list
+
     def __init__(self, args, prompt_data, articles, data_path, logger=None):
 
         # set up logging.
@@ -120,18 +123,19 @@ class CharacterAnnotate:
                     self.config.model,
                     messages=messages,
                     options=options
-                )['message']['content']
-                self.logger.info(f"Response: {response}")
+                )
+                # )['message']['content']
+                # self.logger.info(f"Response: {response}")
                 # self.logger.info(f"Response: {response}")
                 # TODO: implement this https://github.com/ollama/ollama/releases/tag/v0.5.0
                 try:
-                    response = json.loads(response)
-                    if 'character' in response:
-                        if type(response['character']) is list:
-                            return response
-                        else:
-                            self.logger.exception("Invalid response. Please try again.")
-                            raise Exception("Invalid response.")
+                    response = self.Characters.model_validate_json(
+                        response.message.content
+                    )
+                    # self.logger.info(f"Response: {response}")
+                    # exit()  # temp exit for testing.
+                    return response
+
                 except Exception as e:
                     self.logger.exception("Exception: " + str(e))
                     self.logger.exception("Invalid response. Please try again.")
