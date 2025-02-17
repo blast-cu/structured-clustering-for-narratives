@@ -27,7 +27,8 @@ class CharacterAnnotate:
             self.config.host,
             self.config.port,
             # self.config.model,
-            'llama3:70b-instruct-q4_0',
+            # 'llama3:70b-instruct-q4_0',
+            'llama3.3',
             seed=self.config.seed,
             temperature=self.config.temperature
         )
