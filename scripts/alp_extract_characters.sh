@@ -4,7 +4,7 @@
 #SBATCH --mail-user=alle5715@colorado.edu
 #SBATCH --mail-type=ALL
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=32
+#SBATCH --ntasks=4
 #SBATCH --time=1-00:00:00
 #SBATCH --gres=gpu:2
 #SBATCH --mem=50G
