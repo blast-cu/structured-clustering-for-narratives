@@ -41,7 +41,7 @@ echo $OLLAMA_HOST
 echo $OLLAMA_PORT
 
 # https://github.com/ollama/ollama/blob/main/docs/api.md#pull-a-model
-curl http://localhost:11434/api/pull -d '{"model": "llama3:70b-instruct-q4_0"}'
+curl http://localhost:11434/api/pull -d '{"model": "llama3.3"}'
 
 
 
