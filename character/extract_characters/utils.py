@@ -44,7 +44,8 @@ class CharacterAnnotate:
 
         self.prompt_data = prompt_data
         self.articles = articles
-        self.get_head_msgs()
+        # self.get_head_msgs()
+        self.get_head_shot_msgs()
         self.data_path = data_path
 
         self.ollama_options: ollama.Options = {
@@ -95,6 +96,22 @@ class CharacterAnnotate:
                 head_user_prompt.append(assissant_turn)
             self.head_msgs.extend(head_user_prompt)
 
+    def get_head_shot_msgs(self):
+        # implement n shot prompting.
+         # start with the system prompt.
+        self.head_msgs = []
+        self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
+
+        if len(self.prompt_data["demos"]) > 0:
+            head_user_prompt = ""
+            for demo_item in self.prompt_data["demos"]:
+                # strings instead of list of turns.
+                user_turn = "user: " + self.prompt_data["question"] + "\n" + demo_item["article_text"] + "\n"
+                assissant_turn = "assistant: " + str(demo_item["answer"]) + "\n"
+                head_user_prompt += user_turn + assissant_turn
+                
+            self.head_msgs.append({"role": "user", "content": head_user_prompt})
+
     def save_results(self, out_list: list):
         """
         Save the results to a json file.
@@ -112,7 +129,7 @@ class CharacterAnnotate:
         out_path = os.path.join(self.data_path, "results", self.config.out_filename)
         with open(out_path, "w") as f:
             json.dump(final_output, f, indent=4)
-        exit()  # temp exit for testing.
+        # exit()  # temp exit for testing.
 
     def annotate(self, messages):
 
@@ -185,8 +202,9 @@ class CharacterAnnotate:
     def process_article(self, article_idx, article):
         # process article
         messages = self.head_msgs
-        user_prompt = self.prompt_data["question"] + '\n' + article["article_text"]
-        messages.append({"role": "user", "content": user_prompt})
+        user_prompt = self.prompt_data["question"] + '\n' + article["article_text"] + '\n'
+        # messages.append({"role": "user", "content": user_prompt})
+        messages[-1]['content'] += user_prompt
 
         annotation = self.annotate(messages)
         if annotation is not None:
