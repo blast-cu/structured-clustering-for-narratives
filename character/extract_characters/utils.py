@@ -20,7 +20,7 @@ Includes functions for loading models, generating text, and formatting data.
 class CharacterAnnotate:
 
     class Characters(BaseModel):
-        characters: list
+        characters: list[str]
 
     def __init__(self, args, prompt_data, articles, data_path, logger=None):
 
@@ -193,6 +193,8 @@ class CharacterAnnotate:
         messages.append({"role": "user", "content": user_prompt})
 
         annotation = self.annotate(messages)
+        if annotation is not None:
+            annotation = annotation.characters
         article["characters"] = annotation
 
         return article
