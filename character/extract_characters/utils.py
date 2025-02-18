@@ -191,6 +191,8 @@ class CharacterAnnotate:
         annotation = self.annotate(messages)
         if annotation is not None:
             annotation = annotation.characters
+        
+        article["user_prompt"] = user_prompt
         article["characters"] = annotation
 
         return article
