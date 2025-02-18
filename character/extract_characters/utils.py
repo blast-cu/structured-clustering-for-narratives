@@ -123,8 +123,9 @@ class CharacterAnnotate:
         # add config information and save results as json.
         final_output = {}
         final_output["config"] = vars(self.config)
-        final_output["data"] = out_list
         final_output["time_saved"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        final_output["prompt_data"] = self.prompt_data
+        final_output["data"] = out_list
 
         out_path = os.path.join(self.data_path, "results", self.config.out_filename)
         with open(out_path, "w") as f:
@@ -209,8 +210,7 @@ class CharacterAnnotate:
         annotation = self.annotate(messages)
         if annotation is not None:
             annotation = annotation.characters
-        
-        article["user_prompt"] = user_prompt
+
         article["characters"] = annotation
 
         return article

@@ -36,4 +36,4 @@ sleep 1m
 host_ip=$(hostname -i)
 # curl http://10.225.8.162:9999/api/pull -d '{"model": "llama3.3"}'
 
-python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50
+python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --dataset guncontrol_processed_corpus.json --prompt_file guncontrol_default.json
