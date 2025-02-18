@@ -1,17 +1,10 @@
 import json
-import yaml
 import os
 import argparse
-import logging
 from dotenv import load_dotenv
 
 from character.extract_characters.utils import \
     CharacterAnnotate
-
-
-# set up logging.
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 # load the environment variables.
 load_dotenv()
@@ -32,13 +25,6 @@ def main(args):
 
     # ensure the results directory exists.
     os.makedirs(os.path.join(DATA_PATH, "results"), exist_ok=True)
-
-    # # check for existing results.
-    # if os.path.exists(os.path.join(DATA_PATH, "results", args.out_filename)):
-    #     existing_data = json.load(
-    #         open(os.path.join(DATA_PATH, "results", args.out_filename))
-    #     )
-    #     old_out_list = existing_data["data"] if "data" in existing_data else []  # TODO: implement this.
 
     # load prompt data.
     prompt_path = os.path.join("character", "extract_characters", "prompts", args.prompt_file)
@@ -61,12 +47,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Generate the initial exploration of the data with an LLM of the user's choice."
-    )
-    parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Name of config file in prompt/configs directory"
     )
     parser.add_argument(
         "--workers",
@@ -136,10 +116,4 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
-    # load the config file containing defaults.
-    if args.config is not None:
-        config_file = os.path.join("reader", "configs", args.config)
-        config = yaml.safe_load(open(config_file)) if args.config is not None else {}
-        parser.set_defaults(**config)
     main(args)

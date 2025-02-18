@@ -11,15 +11,16 @@ import ollama
 
 from pydantic import BaseModel
 
-"""
-Utility functions for the initial exploration of the data with an LLM.
-Includes functions for loading models, generating text, and formatting data.
-"""
-
 
 class CharacterAnnotate:
+    """
+    Class to annotate the characters in the articles using the Ollama API.
+    """
 
     class Characters(BaseModel):
+        """
+        Class to define desired llm output.
+        """
         characters: list[str]
 
     def __init__(self, args, prompt_data, articles, data_path, logger=None):
@@ -42,27 +43,26 @@ class CharacterAnnotate:
             temperature=args.temperature
         )
 
-        self.prompt_data = prompt_data
-        self.articles = articles
-        self.set_head_msgs()
-        self.data_path = data_path
-
         self.ollama_options: ollama.Options = {
             "seed": self.config.seed,
             "temperature": self.config.temperature
         }
 
+        self.prompt_data = prompt_data
+        self.articles = articles
+        self.set_head_msgs()
+        self.data_path = data_path
+
         logger.info("Initialized Ollama client.")
 
     def format_article(self, article_data: dict) -> dict:
         """
-        format the conversation to include roles and newlines.
+        Format text by joining the sentences in the article.
 
         args:
             row (dict): the row from the dataset.
         returns:
-            dict: the formatted conversation with id, language and conversation 
-                    string with roles and newlines.
+            entry (dict): the formatted conversation.
         """
         entry = {}
 
@@ -73,7 +73,9 @@ class CharacterAnnotate:
         return entry
 
     def set_head_msgs(self):
-        # implement n shot prompting.
+        """
+        Set the head messages for every llm call.
+        """
         # start with the system prompt.
         self.head_msgs = []
         self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
@@ -92,20 +94,19 @@ class CharacterAnnotate:
         else:
             self.head_msgs.append({"role": "user", "content": ""})
 
-    def save_results(self, out_list: list):
+    def save_results(self, output: dict):
         """
         Save the results to a json file.
 
         args:
-            args (dict): the arguments passed to the script.
-            out_list (list): the list of dictionaries containing the output.
+            output (dict): the output of the model.
         """
         # add config information and save results as json.
         final_output = {}
         final_output["config"] = vars(self.config)
         final_output["time_saved"] = time.strftime("%Y-%m-%d %H:%M:%S")
         final_output["prompt_data"] = self.prompt_data
-        final_output["data"] = out_list
+        final_output["data"] = output
 
         out_path = os.path.join(self.data_path, "results", self.config.out_filename)
         with open(out_path, "w") as f:
@@ -113,6 +114,10 @@ class CharacterAnnotate:
         # exit()  # temp exit for testing.
 
     def annotate(self, messages):
+        """
+        Annotate the characters in the article with llm, 
+        check for invalid responses and retry if necessary.
+        """
 
         max_retries = 5
         retry_count = 0
@@ -142,6 +147,9 @@ class CharacterAnnotate:
         return None
 
     def process_articles(self, num_workers, save_interval):
+        """
+        Parallel processing of the articles in the dataset.
+        """
 
         data = {}
         self.logger.info("Formatting articles.")
@@ -181,7 +189,7 @@ class CharacterAnnotate:
         self.save_results(annotated_docs)
 
     def process_article(self, article_idx, article):
-        # process article
+        # process single article
         messages = self.head_msgs
         user_prompt = '\n' + self.prompt_data["question"] + '\n' + article["article_text"] + '\n'
         messages[-1]['content'] += user_prompt
