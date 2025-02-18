@@ -44,8 +44,7 @@ class CharacterAnnotate:
 
         self.prompt_data = prompt_data
         self.articles = articles
-        # self.get_head_msgs()
-        self.get_head_shot_msgs()
+        self.set_head_msgs()
         self.data_path = data_path
 
         self.ollama_options: ollama.Options = {
@@ -73,44 +72,25 @@ class CharacterAnnotate:
         entry["article_text"] = article_text + "\n"
         return entry
 
-    def get_head_msgs(self):
-
+    def set_head_msgs(self):
+        # implement n shot prompting.
         # start with the system prompt.
         self.head_msgs = []
         self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
 
-        # implement n shot prompting. 
-        if len(self.prompt_data["demos"]) > 0:
-            head_user_prompt = []
-            for demo_item in self.prompt_data["demos"]:  # 4 shot demo.
-                # each demo has user and assistant content. 
-                user_turn = {}
-                user_turn["role"] = "user"
-                user_turn["content"] = self.prompt_data["question"] + "\n" + demo_item["article_text"]
-
-                assissant_turn = {}
-                assissant_turn["role"] = "assistant"
-                assissant_turn["content"] = str(demo_item["answer"])
-
-                head_user_prompt.append(user_turn)
-                head_user_prompt.append(assissant_turn)
-            self.head_msgs.extend(head_user_prompt)
-
-    def get_head_shot_msgs(self):
-        # implement n shot prompting.
-         # start with the system prompt.
-        self.head_msgs = []
-        self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
-
+        shots = []
         if len(self.prompt_data["demos"]) > 0:
             head_user_prompt = ""
             for demo_item in self.prompt_data["demos"]:
                 # strings instead of list of turns.
-                user_turn = "user: " + self.prompt_data["question"] + "\n" + demo_item["article_text"] + "\n"
-                assissant_turn = "assistant: " + str(demo_item["answer"]) + "\n"
-                head_user_prompt += user_turn + assissant_turn
-                
+                user_turn = "user: " + self.prompt_data["question"] + "\n" + demo_item["article_text"]
+                assissant_turn = "assistant: " + str(demo_item["answer"])
+                shots.append(user_turn + "\n" + assissant_turn)
+
+            head_user_prompt = "\n".join(shots)   
             self.head_msgs.append({"role": "user", "content": head_user_prompt})
+        else:
+            self.head_msgs.append({"role": "user", "content": ""})
 
     def save_results(self, out_list: list):
         """
@@ -203,8 +183,7 @@ class CharacterAnnotate:
     def process_article(self, article_idx, article):
         # process article
         messages = self.head_msgs
-        user_prompt = self.prompt_data["question"] + '\n' + article["article_text"] + '\n'
-        # messages.append({"role": "user", "content": user_prompt})
+        user_prompt = + '\n' + self.prompt_data["question"] + '\n' + article["article_text"] + '\n'
         messages[-1]['content'] += user_prompt
 
         annotation = self.annotate(messages)
