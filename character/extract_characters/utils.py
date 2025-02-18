@@ -183,7 +183,7 @@ class CharacterAnnotate:
     def process_article(self, article_idx, article):
         # process article
         messages = self.head_msgs
-        user_prompt = + '\n' + self.prompt_data["question"] + '\n' + article["article_text"] + '\n'
+        user_prompt = '\n' + self.prompt_data["question"] + '\n' + article["article_text"] + '\n'
         messages[-1]['content'] += user_prompt
 
         annotation = self.annotate(messages)
