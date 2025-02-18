@@ -46,6 +46,12 @@ class CharacterAnnotate:
         self.articles = articles
         self.get_head_msgs()
         self.data_path = data_path
+
+        self.ollama_options: ollama.Options = {
+            "seed": self.config.seed,
+            "temperature": self.config.temperature
+        }
+
         logger.info("Initialized Ollama client.")
 
     def format_article(self, article_data: dict) -> dict:
@@ -114,27 +120,17 @@ class CharacterAnnotate:
         retry_count = 0
         while retry_count < max_retries:
             try:
-                options: ollama.Options = {
-                    "seed": self.config.seed,
-                    "temperature": self.config.temperature
-                }
-
                 response = self.ollama_client.client.chat(
                     self.config.model,
                     messages=messages,
-                    options=options,
+                    options=self.ollama_options,
                     format=self.Characters.model_json_schema()
                 )
-                # )['message']['content']
-                # self.logger.info(f"Response: {response}")
-                # self.logger.info(f"Response: {response}")
-                # TODO: implement this https://github.com/ollama/ollama/releases/tag/v0.5.0
-                try:
+
+                try:  # https://github.com/ollama/ollama/releases/tag/v0.5.0
                     response = self.Characters.model_validate_json(
                         response.message.content
                     )
-                    # self.logger.info(f"Response: {response}")
-                    # exit()  # temp exit for testing.
                     return response
 
                 except Exception as e:
