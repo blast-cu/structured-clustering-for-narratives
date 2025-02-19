@@ -14,17 +14,13 @@ class PCKMeans:
         """
         Initialize Pairwise Constrained KMeans with cannot-link constraints.
 
-        Parameters:
+        Args:
         -----------
-        n_clusters : int
-            Number of clusters
-        max_iter : int, default=100
-            Maximum number of iterations
-        tol : float, default=1e-4
-            Relative tolerance with regards to Frobenius norm of the difference
+        n_clusters: Number of clusters
+        max_iter: Maximum number of iterations
+        tol: Relative tolerance with regards to Frobenius norm of the difference
             in the cluster centers of two consecutive iterations to declare convergence
-        random_state : int, default=None
-            Random state for reproducibility
+        random_state: Random seed
         """
         self.n_clusters = n_clusters
         self.max_iter = max_iter
@@ -41,17 +37,14 @@ class PCKMeans:
         """
         Fit the Pairwise Constrained KMeans model.
 
-        Parameters:
+        Args:
         -----------
-        X : array-like of shape (n_samples, n_features)
-            Training data
-        cannot_link_constraints : array-like of shape (n_constraints, 2)
-            Pairs of point indices that should not be in the same cluster
+        X: Training data
+        cannot_link_constraints: Pairs of point indices that should not be in the same cluster
 
         Returns:
         --------
-        self : object
-            Fitted estimator
+        self: Fitted estimator
         """
         self.X = X
         self.cannot_link_constraints = cannot_link_constraints

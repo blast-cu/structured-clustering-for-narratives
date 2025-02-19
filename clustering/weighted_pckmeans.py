@@ -41,7 +41,7 @@ class ConstrainedKMeans:
             initializer: Cluster center initializer
             w_cl: Weight for cannot-link constraints
             max_iter: Maximum number of iterations
-            tol: Convergence tolerance for center movement
+            tol: Convergence tolerance for centroid movement
             early_stopping_tol: Number of iterations with no improvement before early stopping
             random_state: Random seed
         """
