@@ -22,6 +22,7 @@ class PCKMeans:
             in the cluster centers of two consecutive iterations to declare convergence
         random_state: Random seed
         """
+
         self.n_clusters = n_clusters
         self.max_iter = max_iter
         self.tol = tol
@@ -46,6 +47,7 @@ class PCKMeans:
         --------
         self: Fitted estimator
         """
+
         self.X = X
         self.cannot_link_constraints = cannot_link_constraints
         self.n_samples = X.shape[0]
@@ -92,11 +94,13 @@ class PCKMeans:
 
     def _compute_inertia(self):
         """Compute sum of squared distances of samples to their closest cluster center."""
+
         distances = euclidean_distances(self.X, self.cluster_centers_)
         return np.sum(np.min(distances, axis=1) ** 2)
 
     def _update_assignments(self, iteration):
         """Update cluster assignments considering cannot-link constraints."""
+
         current_violations = []
         distances = euclidean_distances(self.X, self.cluster_centers_)
 
@@ -140,6 +144,7 @@ class PCKMeans:
 
     def _update_centers(self):
         """Update cluster centers."""
+
         for k in range(self.n_clusters):
             cluster_points = self.X[self.labels_ == k]
             if len(cluster_points) > 0:
@@ -147,10 +152,12 @@ class PCKMeans:
 
     def predict(self, X):
         """Predict cluster labels for new data."""
+
         return np.argmin(euclidean_distances(X, self.cluster_centers_), axis=1)
 
     def get_violation_statistics(self):
         """Get comprehensive statistics about constraint violations."""
+
         return {
             'total_violations': self.total_violations,
             'violations_per_iteration': [len(v) for v in self.violations_per_iteration],

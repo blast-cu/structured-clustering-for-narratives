@@ -21,8 +21,7 @@ class ClusteringMetrics:
 
 class ConstrainedKMeans:
     """
-    Implementation of KMeans clustering with Cannot-Link constraints
-    with enhanced violation tracking
+    Implementation of KMeans clustering with Pairwise Cannot-Link constraints
     """
 
     def __init__(self,
@@ -34,7 +33,7 @@ class ConstrainedKMeans:
                  early_stopping_tol: int = 10,
                  random_state: Optional[int] = None):
         """
-        Initialize the Constrained KMeans algorithm with violation tracking
+        Initialize the Pairwise Constrained KMeans algorithm
 
         Args:
             n_clusters: Number of clusters
@@ -45,6 +44,7 @@ class ConstrainedKMeans:
             early_stopping_tol: Number of iterations with no improvement before early stopping
             random_state: Random seed
         """
+
         self.n_clusters = n_clusters
         self.initializer = initializer
         self.w_cl = w_cl
@@ -67,6 +67,7 @@ class ConstrainedKMeans:
 
     def _compute_distances(self, X: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Compute distances between points and cluster centers"""
+
         return np.array([
             np.sum((X - center) ** 2, axis=1)
             for center in self.cluster_centers_
@@ -76,6 +77,7 @@ class ConstrainedKMeans:
                               n_samples: int,
                               cl_constraints: List[Tuple[int, int]]) -> Dict[int, Set[int]]:
         """Build constraint graph for efficient lookup"""
+
         constraint_graph = {i: set() for i in range(n_samples)}
 
         # Sort constraint pairs to ensure consistency
@@ -96,6 +98,7 @@ class ConstrainedKMeans:
                        assignments: npt.NDArray[np.int64],
                        sorted_constraints: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
         """Find all violated constraints"""
+
         violations = []
 
         for i, j in sorted_constraints:
@@ -109,6 +112,7 @@ class ConstrainedKMeans:
                          constraint_graph: Dict[int, Set[int]],
                          sorted_constraints: List[Tuple[int, int]]) -> Tuple[int, List[Tuple[int, int]]]:
         """Count number of constraint violations and return list of violated constraints"""
+
         violations = self._find_violations(assignments, sorted_constraints)
         return len(violations), violations
 
@@ -118,6 +122,7 @@ class ConstrainedKMeans:
                         constraint_graph: Dict[int, Set[int]],
                         sorted_constraints: List[Tuple[int, int]]) -> ClusteringMetrics:
         """Compute clustering metrics"""
+
         # Calculate inertia
         distances = self._compute_distances(X)
         min_distances = np.min(distances, axis=0)
@@ -137,6 +142,7 @@ class ConstrainedKMeans:
                       X: npt.NDArray[np.float64],
                       constraint_graph: Dict[int, Set[int]]) -> npt.NDArray[np.int64]:
         """Assign points to clusters considering cannot-link constraints"""
+
         n_samples = X.shape[0]
         assignments = np.zeros(n_samples, dtype=np.int64)
 
@@ -160,6 +166,7 @@ class ConstrainedKMeans:
                        X: npt.NDArray[np.float64],
                        assignments: npt.NDArray[np.int64]) -> npt.NDArray[np.float64]:
         """Update cluster centers"""
+
         new_centers = np.zeros_like(self.cluster_centers_)
 
         for k in range(self.n_clusters):
@@ -174,6 +181,7 @@ class ConstrainedKMeans:
 
     def _update_violation_statistics(self, violated_constraints: List[Tuple[int, int]]):
         """Update violation tracking statistics"""
+
         # Update count of total violations per iteration
         self.violations_per_iteration.append(len(violated_constraints))
 
@@ -200,6 +208,7 @@ class ConstrainedKMeans:
         Returns:
             self: Fitted model
         """
+
         # Initialize tracking structures
         self.violation_counts = {}
         self.violations_per_iteration = []
@@ -288,6 +297,7 @@ class ConstrainedKMeans:
 
     def predict(self, X: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
         """Predict cluster labels for new data"""
+
         if self.cluster_centers_ is None:
             raise ValueError("Model must be fitted before making predictions")
 
@@ -296,6 +306,7 @@ class ConstrainedKMeans:
 
     def get_violation_statistics(self) -> Dict:
         """Get comprehensive violation statistics"""
+
         if not hasattr(self, 'violation_counts') or not self.violation_counts:
             return {"error": "Model has not been fitted yet"}
 
