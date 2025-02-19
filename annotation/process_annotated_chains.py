@@ -27,7 +27,8 @@ def generate_constraints():
             if chain_idx_1 != chain_idx_2 and chain_1['annotation'] is not None and chain_2['annotation'] is not None:
                 if (chain_1['annotation']['role'] == chain_2['annotation']['role'] or
                             chain_1['annotation']['stance'] == chain_2['annotation']['stance']):
-                        constraints.append([chain_idx_1, chain_idx_2])
+                        # constraints.append([chain_idx_1, chain_idx_2])
+                        constraints.append((chain_idx_1, chain_idx_2))
 
 def embed_chains(config):
     embs_input = []

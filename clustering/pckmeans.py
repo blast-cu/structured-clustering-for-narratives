@@ -195,6 +195,7 @@ if __name__ == '__main__':
 
     print("Clustering...", flush=True)
 
+
     pckmeans = PCKMeans(n_clusters=args.k, random_state=config['seed'])
     pckmeans.fit(data['embs'], data['constraints'])
 
