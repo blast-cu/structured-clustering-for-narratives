@@ -3,140 +3,244 @@ from typing import List, Tuple, Dict, Optional, Set
 
 import numpy as np
 import numpy.typing as npt
+from scipy.sparse import csr_matrix
+from tqdm import tqdm
 
 from clustering.initializer.base_initializer import BaseInitializer
 
 
 class InitializationStrategy(Enum):
     """Enumeration of available initialization strategies"""
+    
     STANDARD = "standard"  # Standard K-means++ without constraint awareness
     CONSTRAINT_AWARE = "constraint_aware"  # K-means++ with constraint awareness
 
 class KMeansPlusPlusInit(BaseInitializer):
     """Configurable KMeans++ initialization with optional constraint awareness"""
 
-    def __init__(self,
+    def __init__(self, 
                  strategy: InitializationStrategy = InitializationStrategy.STANDARD,
                  w_cl: float = 1.0):
         """
-        Initialize the KMeans++ initializer
-
+        Initialize the optimized KMeans++ initializer
+        
         Args:
             strategy: Initialization strategy to use
             w_cl: Weight for constraint satisfaction (only used if strategy is CONSTRAINT_AWARE)
         """
+
         self.strategy = strategy
         self.w_cl = w_cl
+        self._distance_cache = {}
+        
+    def _build_constraint_matrix(self, 
+                               n_samples: int, 
+                               cl_constraints: List[Tuple[int, int]]) -> csr_matrix:
+        """
+        Build sparse constraint matrix for efficient lookup and vectorized operations
+        
+        Returns a sparse matrix where M[i,j] = 1 if points i and j have a constraint
+        """
 
-    def _build_constraint_graph(self,
-                                n_samples: int,
-                                cl_constraints: List[Tuple[int, int]]) -> Dict[int, Set[int]]:
-        """Build adjacency graph of constraints for efficient lookup"""
-        constraint_graph = {i: set() for i in range(n_samples)}
+        # Initialize rows, cols and data for sparse matrix construction
+        rows = []
+        cols = []
+        
+        # Add constraints to the sparse matrix (symmetric)
         for i, j in cl_constraints:
-            constraint_graph[i].add(j)
-            constraint_graph[j].add(i)
-        return constraint_graph
+            rows.extend([i, j])
+            cols.extend([j, i])
+            
+        # Create sparse matrix with binary values
+        data = np.ones(len(rows), dtype=np.bool_)
+        constraint_matrix = csr_matrix((data, (rows, cols)), 
+                                     shape=(n_samples, n_samples), 
+                                     dtype=np.bool_)
+        
+        return constraint_matrix
+            
+    def _compute_point_norms(self, X: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """Precompute squared L2 norms of all points"""
 
-    def _compute_scores(self,
-                        X: npt.NDArray[np.float64],
-                        centers: npt.NDArray[np.float64],
-                        center_indices: List[int],
-                        constraint_graph: Optional[Dict[int, Set[int]]] = None) -> npt.NDArray[np.float64]:
+        return np.sum(X * X, axis=1)
+    
+    def _compute_distances_to_centers(self,
+                                    X: npt.NDArray[np.float64],
+                                    centers: npt.NDArray[np.float64],
+                                    X_norm: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """
-        Compute scores for each point based on the chosen strategy
-
+        Efficiently compute distances from all points to cluster centers
+        
         Args:
-            X: Input data
-            centers: Currently selected centers
-            center_indices: Indices of selected centers
-            constraint_graph: Constraint adjacency graph (only used for CONSTRAINT_AWARE)
-
+            X: Input data of shape (n_samples, n_features)
+            centers: Current centers of shape (n_centers, n_features)
+            X_norm: Precomputed squared L2 norms of input points
+            
         Returns:
-            Array of scores for each point
+            Distances matrix of shape (n_centers, n_samples)
         """
+
+        n_centers = centers.shape[0]
         n_samples = X.shape[0]
+        
+        # Check cache for this center configuration
+        cache_key = hash(centers.tobytes())
+        if cache_key in self._distance_cache:
+            return self._distance_cache[cache_key]
+        
+        if n_centers == 0:
+            return np.ones((1, n_samples))
+            
+        # Compute center norms
+        center_norms = np.sum(centers * centers, axis=1)
+        
+        # Compute dot products
+        # (x-y)² = x² + y² - 2xy
+        dots = X @ centers.T  # shape: (n_samples, n_centers)
+        
+        # Compute distances efficiently using broadcasting
+        # Equivalent to: 
+        # distances[i,j] = ||X[j]||² + ||centers[i]||² - 2⟨X[j], centers[i]⟩
+        distances = -2 * dots
+        distances = distances.T  # shape: (n_centers, n_samples)
+        distances += center_norms[:, np.newaxis]
+        distances += X_norm[np.newaxis, :]
+        
+        # Cache result
+        self._distance_cache[cache_key] = distances
+        return distances
+        
+    def _compute_min_distances(self, 
+                             all_distances: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+        """Compute minimum distance from each point to any center"""
 
-        # Calculate minimum distances to existing centers
-        if len(centers) > 0:
-            min_distances = np.min([
-                np.sum((X - center) ** 2, axis=1)
-                for center in centers
-            ], axis=0)
-        else:
-            min_distances = np.ones(n_samples)
-
-        if self.strategy == InitializationStrategy.STANDARD:
-            return min_distances
-
-        elif self.strategy == InitializationStrategy.CONSTRAINT_AWARE:
-            # Add constraint satisfaction bonus
-            constraint_bonus = np.zeros(n_samples)
-            if constraint_graph is not None:
-                for i in range(n_samples):
-                    if i not in center_indices:
-                        satisfied_constraints = sum(
-                            1 for idx in center_indices
-                            if i in constraint_graph[idx]
-                        )
-                        constraint_bonus[i] = self.w_cl * satisfied_constraints
-            return min_distances + constraint_bonus
-
-    def initialize(self,
-                   X: npt.NDArray[np.float64],
-                   n_clusters: int,
-                   cl_constraints: List[Tuple[int, int]],
-                   random_state: Optional[int] = None) -> npt.NDArray[np.float64]:
+        return np.min(all_distances, axis=0)
+        
+    def _compute_constraint_bonus(self,
+                                center_indices: List[int],
+                                constraint_matrix: csr_matrix,
+                                n_samples: int) -> npt.NDArray[np.float64]:
         """
-        Initialize cluster centers using configurable KMeans++
+        Compute constraint satisfaction bonus for all points
+        
+        Args:
+            center_indices: Indices of selected centers
+            constraint_matrix: Sparse matrix of constraints
+            n_samples: Total number of data points
+            
+        Returns:
+            Array of constraint bonuses for each point
+        """
 
+        if not center_indices or self.strategy != InitializationStrategy.CONSTRAINT_AWARE:
+            return np.zeros(n_samples)
+            
+        # Create mask for already selected centers
+        selected_mask = np.zeros(n_samples, dtype=bool)
+        selected_mask[center_indices] = True
+        
+        # Get constraints with selected centers
+        if len(center_indices) > 0:
+            # Extract submatrix for center indices (all constraints with centers)
+            center_constraints = constraint_matrix[:, center_indices]
+            
+            # Sum across rows to get number of constraints each point has with centers
+            satisfied_constraints = center_constraints.sum(axis=1).A1  # A1 converts to 1D array
+            
+            # Apply weight
+            constraint_bonus = self.w_cl * satisfied_constraints
+            
+            # Zero out already selected centers
+            constraint_bonus[selected_mask] = 0
+            
+            return constraint_bonus
+        return np.zeros(n_samples)
+        
+    def initialize(self, 
+                  X: npt.NDArray[np.float64], 
+                  n_clusters: int, 
+                  cl_constraints: List[Tuple[int, int]], 
+                  random_state: Optional[int] = None) -> npt.NDArray[np.float64]:
+        """
+        Initialize cluster centers using optimized KMeans++
+        
         Args:
             X: Input data of shape (n_samples, n_features)
             n_clusters: Number of clusters to initialize
             cl_constraints: List of cannot-link constraints
             random_state: Random seed for reproducibility
-
+            
         Returns:
             Initial cluster centers of shape (n_clusters, n_features)
         """
+
         if random_state is not None:
             np.random.seed(random_state)
-
+            
         n_samples, n_features = X.shape
         centers = np.zeros((n_clusters, n_features))
         center_indices = []
-
-        # Build constraint graph if needed
-        constraint_graph = None
+        
+        # Clear distance cache
+        self._distance_cache = {}
+        
+        # Precompute point norms (constant throughout initialization)
+        print("Precomputing point norms...", flush=True)
+        X_norm = self._compute_point_norms(X)
+        
+        # Build constraint matrix if needed
+        constraint_matrix = None
         if self.strategy == InitializationStrategy.CONSTRAINT_AWARE:
-            constraint_graph = self._build_constraint_graph(n_samples, cl_constraints)
-
+            print("Building the sparse constraint matrix...", flush=True)
+            constraint_matrix = self._build_constraint_matrix(n_samples, cl_constraints)
+        
         # Select first center randomly
         first_idx = np.random.randint(n_samples)
         centers[0] = X[first_idx]
         center_indices.append(first_idx)
-
+        
+        # Compute all distances (will be updated incrementally)
+        all_distances = self._compute_distances_to_centers(X, centers[:1], X_norm)
+        
         # Select remaining centers
-        for k in range(1, n_clusters):
-            # Compute scores based on strategy
-            scores = self._compute_scores(
-                X, centers[:k], center_indices, constraint_graph
+        for k in tqdm(range(1, n_clusters)):
+            # Get minimum distances to existing centers
+            min_distances = self._compute_min_distances(all_distances)
+            
+            # Compute constraint bonus if applicable
+            constraint_bonus = self._compute_constraint_bonus(
+                center_indices, constraint_matrix, n_samples
             )
-
+            
+            # Combine distance scores and constraint bonus
+            scores = min_distances + constraint_bonus
+            
             # Zero out already selected points
-            scores[center_indices] = 0
-
+            mask = np.ones(n_samples, dtype=bool)
+            mask[center_indices] = False
+            masked_scores = scores.copy()
+            masked_scores[~mask] = 0
+            
             # Select next center
-            if np.sum(scores) == 0:
+            if np.sum(masked_scores) == 0:
                 # If all scores are 0, choose randomly from remaining points
                 remaining = list(set(range(n_samples)) - set(center_indices))
                 next_idx = np.random.choice(remaining)
             else:
                 # Choose proportional to scores
-                probs = scores / np.sum(scores)
+                probs = masked_scores / np.sum(masked_scores)
                 next_idx = np.random.choice(n_samples, p=probs)
-
+                
+            # Update centers and indices
             centers[k] = X[next_idx]
             center_indices.append(next_idx)
-
+            
+            # Efficiently update distances by computing only for the new center
+            new_center_distances = self._compute_distances_to_centers(
+                X, centers[k:k+1], X_norm
+            )
+            
+            # Append to existing distances matrix
+            all_distances = np.vstack([all_distances, new_center_distances])
+                
         return centers

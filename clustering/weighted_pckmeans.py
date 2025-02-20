@@ -1,11 +1,14 @@
 import argparse
 import pickle
+from collections import Counter
 from dataclasses import dataclass
 from typing import Optional, List, Tuple, Dict, Set
 
 import numpy as np
 import numpy.typing as npt
 from pyhocon import ConfigFactory
+from scipy.sparse import csr_matrix, lil_matrix
+from tqdm import tqdm
 
 from clustering.initializer.base_initializer import BaseInitializer
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
@@ -14,6 +17,7 @@ from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, Initi
 @dataclass
 class ClusteringMetrics:
     """Metrics for tracking clustering performance"""
+
     inertia: float  # Sum of squared distances to centers
     constraint_violations: int  # Number of constraint violations
     total_cost: float  # Combined objective function value
@@ -93,6 +97,27 @@ class ConstrainedKMeans:
             constraint_graph[j].add(i)
 
         return constraint_graph, sorted_constraints
+    
+    def _build_constraint_matrix(self, n_samples: int, cl_constraints: List[Tuple[int, int]]):
+        # Sort constraint pairs to ensure consistency
+
+        sorted_constraints = []
+        for i, j in cl_constraints:
+            if i > j:
+                sorted_constraints.append((j, i))
+            else:
+                sorted_constraints.append((i, j))
+                
+        # Initialize lil matrix for efficient construction
+        constraint_matrix = lil_matrix((n_samples, n_samples), dtype=np.bool_)
+        
+        # Add constraints to the sparse matrix (symmetric)
+        for i, j in sorted_constraints:
+            constraint_matrix[i, j] = True
+            constraint_matrix[j, i] = True
+            
+        # Convert to CSR format for efficient row slicing and operations
+        return csr_matrix(constraint_matrix), sorted_constraints
 
     def _find_violations(self,
                        assignments: npt.NDArray[np.int64],
@@ -215,11 +240,13 @@ class ConstrainedKMeans:
         self.all_violations_history = []
 
         # Initialize centers
+        print("Initializing cluster centers...", flush=True)
         self.cluster_centers_ = self.initializer.initialize(
             X, self.n_clusters, cl_constraints, self.random_state
         )
 
         # Build constraint graph and get sorted constraints
+        print("Building constraint graph...", flush=True)
         constraint_graph, sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
 
         # Initialize history and tracking variables
@@ -230,7 +257,7 @@ class ConstrainedKMeans:
         iterations_without_improvement = 0
 
         # Main clustering loop
-        for iteration in range(self.max_iter):
+        for iteration in tqdm(range(self.max_iter)):
             # Assign points to clusters
             new_assignments = self._assign_points(X, constraint_graph)
 
@@ -369,8 +396,6 @@ if __name__ == '__main__':
     # Load data
     with open(config["cluster_embs_path"], 'rb') as f:
         data = pickle.load(f)
-
-    print("Clustering...", flush=True)
 
     # Create initializer (either standard or constraint-aware)
     initializer = KMeansPlusPlusInit(

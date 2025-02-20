@@ -23,8 +23,8 @@ export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 # Processing annotated chains
-python3 ./process_annotated_chains.py -c "immigration"
+python3 ./annotation/process_annotated_chains.py -c "immigration"
 
 # Clustering chains
 
-python3 ./clustering/pckmeans.py -c "immigration" -k 1000
+python3 ./clustering/weighted_pckmeans.py -c "immigration" -k 250

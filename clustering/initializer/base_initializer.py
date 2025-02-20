@@ -6,6 +6,7 @@ from typing import List, Tuple, Optional
 
 class BaseInitializer(ABC):
     """Abstract base class for cluster initializers"""
+    
     @abstractmethod
     def initialize(self,
                   X: npt.NDArray[np.float64],
