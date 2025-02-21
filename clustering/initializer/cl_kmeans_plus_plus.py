@@ -32,9 +32,9 @@ class KMeansPlusPlusInit(BaseInitializer):
         self.strategy = strategy
         self.w_cl = w_cl
         self._distance_cache = {}
-        
-    def _build_constraint_matrix(self, 
-                               n_samples: int, 
+
+    @staticmethod
+    def _build_constraint_matrix(n_samples: int,
                                cl_constraints: List[Tuple[int, int]]) -> csr_matrix:
         """
         Build sparse constraint matrix for efficient lookup and vectorized operations
@@ -58,8 +58,9 @@ class KMeansPlusPlusInit(BaseInitializer):
                                      dtype=np.bool_)
         
         return constraint_matrix
-            
-    def _compute_point_norms(self, X: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+
+    @staticmethod
+    def _compute_point_norms(X: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Precompute squared L2 norms of all points"""
 
         return np.sum(X * X, axis=1)
@@ -105,13 +106,16 @@ class KMeansPlusPlusInit(BaseInitializer):
         distances = distances.T  # shape: (n_centers, n_samples)
         distances += center_norms[:, np.newaxis]
         distances += X_norm[np.newaxis, :]
+
+        # Ensure no negative distances due to numerical precision
+        distances = np.maximum(distances, 0)
         
         # Cache result
         self._distance_cache[cache_key] = distances
         return distances
-        
-    def _compute_min_distances(self, 
-                             all_distances: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+
+    @staticmethod
+    def _compute_min_distances(all_distances: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
         """Compute minimum distance from each point to any center"""
 
         return np.min(all_distances, axis=0)

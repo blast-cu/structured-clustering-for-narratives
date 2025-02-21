@@ -1,13 +1,11 @@
 import argparse
 import pickle
-from collections import Counter
 from dataclasses import dataclass
 from typing import Optional, List, Tuple, Dict, Set
 
 import numpy as np
 import numpy.typing as npt
 from pyhocon import ConfigFactory
-from scipy.sparse import csr_matrix, lil_matrix
 from tqdm import tqdm
 
 from clustering.initializer.base_initializer import BaseInitializer
@@ -77,8 +75,8 @@ class ConstrainedKMeans:
             for center in self.cluster_centers_
         ])
 
-    def _build_constraint_graph(self,
-                              n_samples: int,
+    @staticmethod
+    def _build_constraint_graph(n_samples: int,
                               cl_constraints: List[Tuple[int, int]]) -> Dict[int, Set[int]]:
         """Build constraint graph for efficient lookup"""
 
@@ -97,30 +95,9 @@ class ConstrainedKMeans:
             constraint_graph[j].add(i)
 
         return constraint_graph, sorted_constraints
-    
-    def _build_constraint_matrix(self, n_samples: int, cl_constraints: List[Tuple[int, int]]):
-        # Sort constraint pairs to ensure consistency
 
-        sorted_constraints = []
-        for i, j in cl_constraints:
-            if i > j:
-                sorted_constraints.append((j, i))
-            else:
-                sorted_constraints.append((i, j))
-                
-        # Initialize lil matrix for efficient construction
-        constraint_matrix = lil_matrix((n_samples, n_samples), dtype=np.bool_)
-        
-        # Add constraints to the sparse matrix (symmetric)
-        for i, j in sorted_constraints:
-            constraint_matrix[i, j] = True
-            constraint_matrix[j, i] = True
-            
-        # Convert to CSR format for efficient row slicing and operations
-        return csr_matrix(constraint_matrix), sorted_constraints
-
-    def _find_violations(self,
-                       assignments: npt.NDArray[np.int64],
+    @staticmethod
+    def _find_violations(assignments: npt.NDArray[np.int64],
                        sorted_constraints: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
         """Find all violated constraints"""
 
@@ -387,6 +364,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
     parser.add_argument('-i', metavar='MAX_ITER', default=100, type=int, help='maximum number of iterations')
+    parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
@@ -400,14 +378,14 @@ if __name__ == '__main__':
     # Create initializer (either standard or constraint-aware)
     initializer = KMeansPlusPlusInit(
         strategy=InitializationStrategy.CONSTRAINT_AWARE,
-        w_cl=1.0
+        w_cl=args.w
     )
 
     # Create and fit the model
     model = ConstrainedKMeans(
         n_clusters=args.k,
         initializer=initializer,
-        w_cl=1.0,
+        w_cl=args.w,
         max_iter=args.i,
         tol=1e-4,
         early_stopping_tol=10,
