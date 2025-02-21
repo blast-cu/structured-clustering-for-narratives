@@ -31,9 +31,5 @@ nohup ollama serve > ollama_log_3.txt 2>&1 &
 echo "Waiting for Ollama server to start"
 sleep 1m
 
-# sinteractive --account=blanca-curc-gpu --partition=blanca-curc-gpu --qos=blanca-curc-gpu --time=01:00:00 --ntasks=16 --gres=gpu:1 --mem=20G
-
 host_ip=$(hostname -i)
-# curl http://10.225.8.162:9999/api/pull -d '{"model": "llama3.3"}'
-
-python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --dataset guncontrol_processed_corpus.json --prompt_file guncontrol_default.json
+python3 -m character.extract_characters.run --host $host_ip --workers 8 --save_interval 50 --config default.yaml

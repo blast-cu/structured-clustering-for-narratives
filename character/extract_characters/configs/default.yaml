@@ -1,0 +1,9 @@
+---
+prompt_file: immigration_default
+dataset: immigration_corpus.json
+model: llama3.3:70b-instruct-q4_K_M
+seed: 42
+temperature: 1.0
+workers: 8
+save_interval: 100
+max_retries: 5
