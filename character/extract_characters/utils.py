@@ -154,7 +154,7 @@ class Annotate:
         article_sents = doc_data["sentences"]
         article_sents_text = [s["text"] for s in article_sents.values()]
         article_text = " ".join(article_sents_text).strip()
-        entry["article_text"] = article_text + "\n"
+        entry["text"] = article_text + "\n"
 
         return entry
 
