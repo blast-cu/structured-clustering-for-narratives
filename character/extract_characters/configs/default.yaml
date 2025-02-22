@@ -1,5 +1,5 @@
 ---
-prompt_file: immigration_default
+prompt_file: immigration_default.json
 dataset: immigration_corpus.json
 model: llama3.3:70b-instruct-q4_K_M
 seed: 42
