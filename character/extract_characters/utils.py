@@ -175,6 +175,7 @@ class Annotate:
         if "demos" in self.prompt_data.keys() and len(self.prompt_data["demos"]) > 0:
             head_user_prompt = ""
             for demo_item in self.prompt_data["demos"]:
+                print(demo_item)
                 user_turn = "user: " + self.prompt_data["question"] + "\n" + demo_item["text"]
                 assissant_turn = "assistant: " + str(demo_item["answer"])
                 shots.append(user_turn + "\n" + assissant_turn)
