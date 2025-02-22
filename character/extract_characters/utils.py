@@ -102,6 +102,12 @@ class Annotate:
         self.already_processed, self.docs = \
             self.handle_processed()
 
+        self.logger.info("Formatting docs")
+        self.data = {}
+        for doc_id, doc_data in tqdm(self.docs.items()):
+            entry = self.format_doc(doc_data)
+            self.data[doc_id] = entry
+
         # set the head messages for the conversations.
         self.set_head_msgs()
 
@@ -227,11 +233,7 @@ class Annotate:
         save_interval = self.config.save_interval
 
         # formatting docs into entries.
-        data = {}
-        self.logger.info("Formatting docs")
-        for doc_id, doc_data in tqdm(self.docs.items()):
-            entry = self.format_doc(doc_data)
-            data[doc_id] = entry
+        data = self.data
 
         annotated_docs = self.already_processed
         total_docs = len(data)
