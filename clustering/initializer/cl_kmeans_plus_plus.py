@@ -192,9 +192,9 @@ class KMeansPlusPlusInit(BaseInitializer):
         print("Precomputing point norms...", flush=True)
         X_norm = self._compute_point_norms(X)
         
-        # Build constraint matrix if needed
+        # Build constraint matrix only if needed
         constraint_matrix = None
-        if self.strategy == InitializationStrategy.CONSTRAINT_AWARE:
+        if self.strategy == InitializationStrategy.CONSTRAINT_AWARE and self.w_cl > 0:
             print("Building the sparse constraint matrix...", flush=True)
             constraint_matrix = self._build_constraint_matrix(n_samples, cl_constraints)
         
@@ -203,21 +203,22 @@ class KMeansPlusPlusInit(BaseInitializer):
         centers[0] = X[first_idx]
         center_indices.append(first_idx)
         
-        # Compute all distances (will be updated incrementally)
-        all_distances = self._compute_distances_to_centers(X, centers[:1], X_norm)
-        
         # Select remaining centers
         for k in tqdm(range(1, n_clusters)):
+            # Compute distances to all current centers
+            all_distances = self._compute_distances_to_centers(X, centers[:k], X_norm)
+            
             # Get minimum distances to existing centers
             min_distances = self._compute_min_distances(all_distances)
             
-            # Compute constraint bonus if applicable
-            constraint_bonus = self._compute_constraint_bonus(
-                center_indices, constraint_matrix, n_samples
-            )
-            
-            # Combine distance scores and constraint bonus
-            scores = min_distances + constraint_bonus
+            # Add constraint bonus only if using constraint-aware strategy
+            if self.strategy == InitializationStrategy.CONSTRAINT_AWARE and self.w_cl > 0:
+                constraint_bonus = self._compute_constraint_bonus(
+                    center_indices, constraint_matrix, n_samples
+                )
+                scores = min_distances + constraint_bonus
+            else:
+                scores = min_distances
             
             # Zero out already selected points
             mask = np.ones(n_samples, dtype=bool)
@@ -234,17 +235,9 @@ class KMeansPlusPlusInit(BaseInitializer):
                 # Choose proportional to scores
                 probs = masked_scores / np.sum(masked_scores)
                 next_idx = np.random.choice(n_samples, p=probs)
-                
+            
             # Update centers and indices
             centers[k] = X[next_idx]
             center_indices.append(next_idx)
-            
-            # Efficiently update distances by computing only for the new center
-            new_center_distances = self._compute_distances_to_centers(
-                X, centers[k:k+1], X_norm
-            )
-            
-            # Append to existing distances matrix
-            all_distances = np.vstack([all_distances, new_center_distances])
                 
         return centers

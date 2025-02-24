@@ -130,10 +130,14 @@ class ConstrainedKMeans:
         min_distances = np.min(distances, axis=0)
         inertia = np.sum(min_distances)
 
-        # Count constraint violations and get list of violated constraints
-        num_violations, violated_constraints = self._count_violations(
-            assignments, constraint_graph, sorted_constraints
-        )
+        # Only check violations if constraints have weight
+        if self.w_cl > 0:
+            num_violations, violated_constraints = self._count_violations(
+                assignments, constraint_graph, sorted_constraints
+            )
+        else:
+            num_violations = 0
+            violated_constraints = []
 
         # Calculate total cost
         total_cost = inertia + self.w_cl * num_violations
@@ -150,6 +154,13 @@ class ConstrainedKMeans:
 
         # Calculate base distances to all centers
         distances = self._compute_distances(X)
+
+        # Add small epsilon to prevent exactly equal distances
+        distances += np.random.uniform(0, 1e-10, distances.shape)
+        
+        if self.w_cl == 0:
+            # If no constraint weight, assign all points at once
+            return np.argmin(distances, axis=0)
 
         # Assign points one by one
         for i in range(n_samples):
@@ -184,6 +195,10 @@ class ConstrainedKMeans:
     def _update_violation_statistics(self, violated_constraints: List[Tuple[int, int]]):
         """Update violation tracking statistics"""
 
+        # Skip violation tracking if constraints have no weight
+        if self.w_cl == 0:
+            return
+        
         # Update count of total violations per iteration
         self.violations_per_iteration.append(len(violated_constraints))
 
@@ -211,20 +226,26 @@ class ConstrainedKMeans:
             self: Fitted model
         """
 
-        # Initialize tracking structures
-        self.violation_counts = {}
-        self.violations_per_iteration = []
-        self.all_violations_history = []
+        if self.w_cl > 0:
+            self.violation_counts = {}
+            self.violations_per_iteration = []
+            self.all_violations_history = []
+            # Build constraint graph only if needed
+            print("Building constraint graph...", flush=True)
+            constraint_graph, sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
+        else:
+            # Empty placeholders when w_cl = 0
+            constraint_graph = {}
+            sorted_constraints = []
+            self.violation_counts = {}
+            self.violations_per_iteration = []
+            self.all_violations_history = []
 
         # Initialize centers
         print("Initializing cluster centers...", flush=True)
         self.cluster_centers_ = self.initializer.initialize(
             X, self.n_clusters, cl_constraints, self.random_state
         )
-
-        # Build constraint graph and get sorted constraints
-        print("Building constraint graph...", flush=True)
-        constraint_graph, sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
 
         # Initialize history and tracking variables
         self.history_ = []
@@ -235,19 +256,20 @@ class ConstrainedKMeans:
 
         # Main clustering loop
         for iteration in tqdm(range(self.max_iter)):
-            # Assign points to clusters
+            # Get new assignments
             new_assignments = self._assign_points(X, constraint_graph)
-
+            
             # Update centers
             new_centers = self._update_centers(X, new_assignments)
-
+            
             # Compute metrics
             metrics = self._compute_metrics(X, new_assignments, constraint_graph, sorted_constraints)
             self.history_.append(metrics)
-
-            # Update violation statistics
-            self._update_violation_statistics(metrics.violated_constraints)
-
+            
+            # Update violation statistics only if needed
+            if self.w_cl > 0:
+                self._update_violation_statistics(metrics.violated_constraints)
+            
             # Check for improvement
             if metrics.total_cost < best_cost:
                 best_cost = metrics.total_cost
@@ -256,17 +278,17 @@ class ConstrainedKMeans:
                 iterations_without_improvement = 0
             else:
                 iterations_without_improvement += 1
-
+            
             # Early stopping checks
             if iterations_without_improvement >= self.early_stopping_tol:
                 break
-
+            
             # Check for convergence
             if iteration > 0:
                 center_shift = np.sum((new_centers - self.cluster_centers_) ** 2)
                 if center_shift < self.tol:
                     break
-
+            
             self.cluster_centers_ = new_centers
             self.labels_ = new_assignments
 
@@ -277,16 +299,14 @@ class ConstrainedKMeans:
 
         self.n_iter_ = iteration + 1
 
-        # Identify persistent violations (violated in all iterations)
-        if self.all_violations_history:
+        # Only identify persistent violations if constraints have weight
+        if self.w_cl > 0 and self.all_violations_history:
             min_iterations = min(len(self.all_violations_history), self.n_iter_)
             if min_iterations > 0:
-                # Count how many iterations each constraint was violated
                 persistent_candidates = [constraint for constraint, count
-                                      in self.violation_counts.items()
-                                      if count >= min_iterations]
+                                    in self.violation_counts.items()
+                                    if count >= min_iterations]
 
-                # Verify they were violated in all iterations up to convergence
                 self.persistent_violations = []
                 for constraint in persistent_candidates:
                     all_iterations = True
@@ -296,6 +316,8 @@ class ConstrainedKMeans:
                             break
                     if all_iterations:
                         self.persistent_violations.append(constraint)
+        else:
+            self.persistent_violations = []
 
         return self
 
@@ -311,6 +333,9 @@ class ConstrainedKMeans:
     def get_violation_statistics(self) -> Dict:
         """Get comprehensive violation statistics"""
 
+        if self.w_cl <= 0:
+            return None
+        
         if not hasattr(self, 'violation_counts') or not self.violation_counts:
             return {"error": "Model has not been fitted yet"}
 
@@ -350,7 +375,11 @@ class ConstrainedKMeans:
     def save(self, config):
         """Save the model to a file."""
 
+        print("Saving clustering results...", flush=True)
+
         output = {
+            "number_cluster": self.n_clusters,
+            "w_cl": self.w_cl,
             "cluster_centers": self.cluster_centers_,
             "labels": self.labels_,
             "violations": self.get_violation_statistics()
@@ -368,6 +397,9 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
+
+    print("N_CLUSTERS: " + str(args.k), flush=True)
+    print("W_CL: " + str(args.w), flush=True)
 
     print("Loading data for clustering...", flush=True)
 
