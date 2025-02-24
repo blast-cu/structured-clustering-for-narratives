@@ -203,11 +203,11 @@ class KMeansPlusPlusInit(BaseInitializer):
         centers[0] = X[first_idx]
         center_indices.append(first_idx)
         
+        # Compute initial distances to first center
+        all_distances = self._compute_distances_to_centers(X, centers[:1], X_norm)
+        
         # Select remaining centers
         for k in tqdm(range(1, n_clusters)):
-            # Compute distances to all current centers
-            all_distances = self._compute_distances_to_centers(X, centers[:k], X_norm)
-            
             # Get minimum distances to existing centers
             min_distances = self._compute_min_distances(all_distances)
             
@@ -239,5 +239,13 @@ class KMeansPlusPlusInit(BaseInitializer):
             # Update centers and indices
             centers[k] = X[next_idx]
             center_indices.append(next_idx)
+            
+            # Efficiently update distances by computing only for the new center
+            new_center_distances = self._compute_distances_to_centers(
+                X, centers[k:k+1], X_norm
+            )
+            
+            # Append to existing distances matrix
+            all_distances = np.vstack([all_distances, new_center_distances])
                 
         return centers
