@@ -385,7 +385,7 @@ class ConstrainedKMeans:
             "violations": self.get_violation_statistics()
         }
 
-        with open(config["clusters_path"], 'wb') as f:
+        with open(config["clusters_path"] + f"_{self.n_clusters}_{self.w_cl}", 'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
