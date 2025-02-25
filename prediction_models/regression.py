@@ -153,8 +153,8 @@ if __name__ == "__main__":
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     print(f"Running regression with:")
-    print(f"  - Number of clusters: {args.clusters}")
-    print(f"  - Constraint weight: {args.weight}")
+    print(f"  - Number of clusters: {args.k}")
+    print(f"  - Constraint weight: {args.w}")
 
-    data = create_dataset(args.k, args.c)
+    data = create_dataset(args.k, args.w)
     regression(data, config, args.k, args.w)
