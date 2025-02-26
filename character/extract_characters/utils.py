@@ -165,7 +165,7 @@ class Annotate:
         # self.head_msgs = []
         # start with the system prompt.
         # self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
-        self.system_message = self.prompt_data["system_prompt"]
+        self.system_prompt = self.prompt_data["system_prompt"]
 
         # implement n shot prompting.
         shots = []
@@ -175,7 +175,7 @@ class Annotate:
                 assissant_turn = "assistant: " + str(demo_item["answer"])
                 shots.append(user_turn + "\n" + assissant_turn)
 
-            self.head_user_message = "\n\n".join(shots)
+            self.head_user_prompt = "\n\n".join(shots)
             # self.head_msgs.append({"role": "user", "content": head_user_prompt})
         else:
             # self.head_msgs.append({"role": "user", "content": ""})
@@ -299,9 +299,8 @@ class Annotate:
         Process the doc with the LLM.
         """
         # Add the user prompt to the messages.
-        system_message = self.system_message
-        system_message = {"role": "system", "content":system_message}
-        user_text = self.head_user_message + "\n\n" + self.prompt_data["question"] + '\n' + doc["text"]
+        system_message = {"role": "system", "content":self.system_prompt}
+        user_text = self.head_user_prompt + "\n\n" + self.prompt_data["question"] + '\n' + doc["text"]
         user_message = {"role": "user", "content": user_text}
         messages = [system_message, user_message]
 
