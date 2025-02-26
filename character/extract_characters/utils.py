@@ -48,6 +48,7 @@ class OllamaClient:
             options=self.options,
             format=self.Answer.model_json_schema()
         )
+        print(response)  # debugging
 
         try:  # https://github.com/ollama/ollama/releases/tag/v0.5.0
             response = self.Answer.model_validate_json(
