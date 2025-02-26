@@ -165,24 +165,24 @@ class Annotate:
         """
         Set the head messages for the conversations.
         """
-        self.head_msgs = []
+        # self.head_msgs = []
         # start with the system prompt.
-        self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
+        # self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
+        self.system_message = self.prompt_data["system_prompt"]
 
-        # # implement n shot prompting.
-        # shots = []
-        # if "demos" in self.prompt_data.keys() and len(self.prompt_data["demos"]) > 0:
-        #     head_user_prompt = ""
-        #     for demo_item in self.prompt_data["demos"]:
-        #         user_turn = "user: " + self.prompt_data["question"] + "\n" + demo_item["text"]
-        #         assissant_turn = "assistant: " + str(demo_item["answer"])
-        #         shots.append(user_turn + "\n" + assissant_turn)
+        # implement n shot prompting.
+        shots = []
+        if "demos" in self.prompt_data.keys() and len(self.prompt_data["demos"]) > 0:
+            for demo_item in self.prompt_data["demos"]:
+                user_turn = "user: " + self.prompt_data["question"] + "\n" + demo_item["text"]
+                assissant_turn = "assistant: " + str(demo_item["answer"])
+                shots.append(user_turn + "\n" + assissant_turn)
 
-        #     head_user_prompt = "\n\n".join(shots)
-        #     self.head_msgs.append({"role": "user", "content": head_user_prompt})
-        # else:
-        #     self.head_msgs.append({"role": "user", "content": ""})
-        self.head_msgs.append({"role": "user", "content": ""})
+            self.head_user_message = "\n\n".join(shots)
+            # self.head_msgs.append({"role": "user", "content": head_user_prompt})
+        else:
+            # self.head_msgs.append({"role": "user", "content": ""})
+            self.head_user_message = ""
 
 
     def save_results(self, out_list: dict):
@@ -302,11 +302,9 @@ class Annotate:
         Process the doc with the LLM.
         """
         # Add the user prompt to the messages.
-        system_message = self.head_msgs[0]
-        user_text = self.prompt_data["question"] + '\n' + doc["text"]
+        system_message = self.system_message
+        user_text = self.head_user_message + "\n\n" + self.prompt_data["question"] + '\n' + doc["text"]
         user_message = {"role": "user", "content": user_text}
-        # user_prompt = self.prompt_data["question"] + '\n' + doc["text"]
-        # messages[-1]['content'] += user_prompt
         messages = [system_message, user_message]
 
         annotation = self.annotate(messages)
