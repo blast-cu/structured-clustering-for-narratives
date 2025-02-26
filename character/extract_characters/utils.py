@@ -302,9 +302,12 @@ class Annotate:
         Process the doc with the LLM.
         """
         # Add the user prompt to the messages.
-        messages = self.head_msgs.copy()
-        user_prompt = self.prompt_data["question"] + '\n' + doc["text"]
-        messages[-1]['content'] += user_prompt
+        system_message = self.head_msgs[0]
+        user_text = self.prompt_data["question"] + '\n' + doc["text"]
+        user_message = {"role": "user", "content": user_text}
+        # user_prompt = self.prompt_data["question"] + '\n' + doc["text"]
+        # messages[-1]['content'] += user_prompt
+        messages = [system_message, user_message]
 
         annotation = self.annotate(messages)
         if annotation is not None:  # make the output serializable.
