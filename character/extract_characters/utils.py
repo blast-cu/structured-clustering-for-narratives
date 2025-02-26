@@ -50,7 +50,7 @@ class OllamaClient:
             format=self.Answer.model_json_schema()
         )
         self.logger.info(response)  # debugging
-        self.logger.info()
+        self.logger.info("")
 
         try:  # https://github.com/ollama/ollama/releases/tag/v0.5.0
             response = self.Answer.model_validate_json(
