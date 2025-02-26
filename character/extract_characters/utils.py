@@ -303,6 +303,7 @@ class Annotate:
         """
         # Add the user prompt to the messages.
         system_message = self.system_message
+        system_message = {"role": "system", "content":system_message}
         user_text = self.head_user_message + "\n\n" + self.prompt_data["question"] + '\n' + doc["text"]
         user_message = {"role": "user", "content": user_text}
         messages = [system_message, user_message]
