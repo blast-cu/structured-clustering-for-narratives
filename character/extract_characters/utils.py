@@ -302,7 +302,7 @@ class Annotate:
         Process the doc with the LLM.
         """
         # Add the user prompt to the messages.
-        messages = self.head_msgs
+        messages = self.head_msgs.copy()
         user_prompt = self.prompt_data["question"] + '\n' + doc["text"]
         messages[-1]['content'] += user_prompt
 
