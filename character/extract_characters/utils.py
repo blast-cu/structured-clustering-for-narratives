@@ -54,9 +54,6 @@ class OllamaClient:
             response = self.Answer.model_validate_json(
                 response.message.content
             )
-            self.logger.info(messages)
-            self.logger.info(response)  # debugging
-            self.logger.info("")
             return response
 
         except Exception as e:
