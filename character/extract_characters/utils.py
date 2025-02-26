@@ -308,7 +308,7 @@ class Annotate:
         user_message = {"role": "user", "content": user_text}
         messages = [system_message, user_message]
 
-        self.logger.info(messa)
+        self.logger.info(messages)
 
         annotation = self.annotate(messages)
         if annotation is not None:  # make the output serializable.
