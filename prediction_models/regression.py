@@ -89,7 +89,7 @@ def regression(data, config, num_clusters, constraint_weight, save_results):
     model.fit(X_train_scaled, y_train)
     Y_pred = model.predict(X_test_scaled)
     test_accuracy = round(metrics.accuracy_score(y_test.to_numpy(), Y_pred), 2)
-    f1_score = metrics.f1_score(y_test.to_numpy(), Y_pred, average='macro')
+    f1_score = round(metrics.f1_score(y_test.to_numpy(), Y_pred, average='macro'), 2)
 
     print(f"Test Accuracy for num_clusters={num_clusters}, constraint_weight={constraint_weight}: {test_accuracy}")
     print(metrics.classification_report(y_test.to_numpy(), Y_pred))
