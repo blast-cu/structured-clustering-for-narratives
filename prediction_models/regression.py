@@ -89,6 +89,7 @@ def regression(data, config, num_clusters, constraint_weight, save_results):
     model.fit(X_train_scaled, y_train)
     Y_pred = model.predict(X_test_scaled)
     test_accuracy = round(metrics.accuracy_score(y_test.to_numpy(), Y_pred), 2)
+    f1_score = metrics.f1_score(y_test.to_numpy(), Y_pred, average='macro')
 
     print(f"Test Accuracy for num_clusters={num_clusters}, constraint_weight={constraint_weight}: {test_accuracy}")
     print(metrics.classification_report(y_test.to_numpy(), Y_pred))
@@ -97,9 +98,9 @@ def regression(data, config, num_clusters, constraint_weight, save_results):
 
     # Log the results
     if save_results:
-        log_results(num_clusters, constraint_weight, test_accuracy, config)
+        log_results(num_clusters, constraint_weight, test_accuracy, f1_score, config)
 
-def log_results(num_clusters, constraint_weight, accuracy, config):
+def log_results(num_clusters, constraint_weight, accuracy, f1_score, config):
     """
     Log the results to a JSON file in a thread-safe manner using filelock.
 
@@ -114,6 +115,7 @@ def log_results(num_clusters, constraint_weight, accuracy, config):
         "num_clusters": num_clusters,
         "constraint_weight": constraint_weight,
         "accuracy": accuracy,
+        "macro_f1_score": f1_score,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
     }
 
