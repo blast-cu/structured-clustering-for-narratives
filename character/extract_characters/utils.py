@@ -42,6 +42,7 @@ class OllamaClient:
         """
         Chat with the LLM and check the response.
         """
+        self.logger.info(messages)
         response = self.client.chat(
             self.model,
             messages=messages,
@@ -49,6 +50,7 @@ class OllamaClient:
             format=self.Answer.model_json_schema()
         )
         self.logger.info(response)  # debugging
+        self.logger.info()
 
         try:  # https://github.com/ollama/ollama/releases/tag/v0.5.0
             response = self.Answer.model_validate_json(
