@@ -62,6 +62,9 @@ class OllamaClient:
 
 
 class Annotate:
+    """
+    Class for annotating text with LLM output.
+    """
 
     def __init__(self, args, script_path, data_path, logger=None):
         # set up logging.
@@ -235,27 +238,55 @@ class Annotate:
         annotated_docs = self.already_processed
         total_docs = len(data)
 
-       # Process documents
-        with tqdm(total=total_docs) as pbar:
-            for doc_id, doc in data.items():
+    #    # Process documents
+    #     with tqdm(total=total_docs) as pbar:
+    #         for doc_id, doc in data.items():
+    #             processed_count = 0
+    #             # Process docs and save at regular intervals
+    #             try:
+    
+    #                 doc = self.process_doc(doc)
+    #                 annotated_docs[doc_id] = doc
+    #                 processed_count += 1
+
+    #                 # Update the progress bar
+    #                 pbar.update(1)
+
+    #                 # Save annotated_docs at regular intervals
+    #                 if processed_count % save_interval == 0:
+    #                     self.save_results(annotated_docs)
+    #                     self.logger.info(f"Progress saved after processing {processed_count} docs.")
+
+    #             except Exception as e:
+    #                 self.logger.exception(f"Error processing doc {doc_id}: {e}")
+
+        # Use a ThreadPoolExecutor for parallel processing
+        self.logger.info(f"Processing docs with {num_workers} workers.")  
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = {executor.submit(self.process_doc, doc_id, doc): doc_id for doc_id, doc in data.items()}
+
+            # Initialize tqdm progress bar to track doc processing
+            with tqdm(total=total_docs) as pbar:
                 processed_count = 0
                 # Process docs and save at regular intervals
-                try:
-    
-                    doc = self.process_doc(doc)
-                    annotated_docs[doc_id] = doc
-                    processed_count += 1
+                for future in concurrent.futures.as_completed(futures):
+                    doc_idx = futures[future]
+                    try:
+                        # Get the results of process_doc() for each doc
+                        doc = future.result()
+                        annotated_docs[doc_idx] = doc
+                        processed_count += 1
 
-                    # Update the progress bar
-                    pbar.update(1)
+                        # Update the progress bar
+                        pbar.update(1)
 
-                    # Save annotated_docs at regular intervals
-                    if processed_count % save_interval == 0:
-                        self.save_results(annotated_docs)
-                        self.logger.info(f"Progress saved after processing {processed_count} docs.")
+                        # Save annotated_docs at regular intervals
+                        if processed_count % save_interval == 0:
+                            self.save_results(annotated_docs)
+                            self.logger.info(f"Progress saved after processing {processed_count} docs.")
 
-                except Exception as e:
-                    self.logger.exception(f"Error processing doc {doc_id}: {e}")
+                    except Exception as e:
+                        self.logger.exception(f"Error processing doc {doc_idx}: {e}")
 
         # Save the final results.
         self.save_results(annotated_docs)
