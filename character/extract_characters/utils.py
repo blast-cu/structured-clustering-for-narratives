@@ -263,7 +263,7 @@ class Annotate:
         # Use a ThreadPoolExecutor for parallel processing
         self.logger.info(f"Processing docs with {num_workers} workers.")  
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-            futures = {executor.submit(self.process_doc, doc_id, doc): doc_id for doc_id, doc in data.items()}
+            futures = {executor.submit(self.process_doc, doc): doc_id for doc_id, doc in data.items()}
 
             # Initialize tqdm progress bar to track doc processing
             with tqdm(total=total_docs) as pbar:
