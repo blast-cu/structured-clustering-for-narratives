@@ -57,7 +57,7 @@ def create_dataset(num_clusters, constraint_weight):
 
     return data
 
-def regression(data, config, num_clusters, constraint_weight,):
+def regression(data, config, num_clusters, constraint_weight, save_results):
     print("Running regression...")
     label_encoder = preprocessing.LabelEncoder()
     data['frame'] = label_encoder.fit_transform(data['frame'])
@@ -96,7 +96,8 @@ def regression(data, config, num_clusters, constraint_weight,):
     print(metrics.classification_report(y_test.to_numpy(), Y_pred))
 
     # Log the results
-    log_results(num_clusters, constraint_weight, test_accuracy, config)
+    if save_results:
+        log_results(num_clusters, constraint_weight, test_accuracy, config)
 
 def log_results(num_clusters, constraint_weight, accuracy, config):
     """
@@ -148,6 +149,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('-k', type=int, default=250, help='number of clusters to use')
     parser.add_argument('-w', type=float, default=1.0, help='constraint weight for clustering')
+    parser.add_argument('--save_results', action='store_true', help='save results to file')
     args = parser.parse_args()
 
     config = ConfigFactory.parse_file('./config.conf')[args.c]
@@ -157,4 +159,4 @@ if __name__ == "__main__":
     print(f"  - Constraint weight: {args.w}")
 
     data = create_dataset(args.k, args.w)
-    regression(data, config, args.k, args.w)
+    regression(data, config, args.k, args.w, args.save_results)
