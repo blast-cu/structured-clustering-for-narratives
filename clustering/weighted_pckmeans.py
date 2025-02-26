@@ -77,22 +77,24 @@ class ConstrainedKMeans:
 
     @staticmethod
     def _build_constraint_graph(n_samples: int,
-                              cl_constraints: List[Tuple[int, int]]) -> Dict[int, Set[int]]:
+                            cl_constraints: List[Tuple[int, int]]) -> Dict[int, Set[int]]:
         """Build constraint graph for efficient lookup"""
 
         constraint_graph = {i: set() for i in range(n_samples)}
-
-        # Sort constraint pairs to ensure consistency
+        
+        # Pre-sort constraints once to avoid repeated sorting
         sorted_constraints = []
+        
         for i, j in cl_constraints:
+            # Ensure i < j ordering consistently
             if i > j:
-                sorted_constraints.append((j, i))
+                sorted_constraints.append((int(j), int(i)))
             else:
-                sorted_constraints.append((i, j))
-
-        for i, j in sorted_constraints:
-            constraint_graph[i].add(j)
-            constraint_graph[j].add(i)
+                sorted_constraints.append((int(i), int(j)))
+            
+            # Add to constraint graph
+            constraint_graph[int(i)].add(int(j))
+            constraint_graph[int(j)].add(int(i))
 
         return constraint_graph, sorted_constraints
 
@@ -199,18 +201,26 @@ class ConstrainedKMeans:
         if self.w_cl == 0:
             return
         
-        # Update count of total violations per iteration
-        self.violations_per_iteration.append(len(violated_constraints))
-
-        # Update all violations history
-        self.all_violations_history.append(violated_constraints)
-
-        # Update violation counts for each constraint
+        # Convert to set of violated constraints for this iteration
+        # Use frozenset for each constraint to ensure hashability
+        violated_set = {frozenset(constraint) for constraint in violated_constraints}
+        
+        # Add to history (only count, not the actual constraints)
+        self.violations_per_iteration.append(len(violated_set))
+        
+        # For persistent violations tracking, use set operations
+        if not hasattr(self, 'potential_persistent_violations'):
+            # First iteration - all current violations are potentially persistent
+            self.potential_persistent_violations = violated_set
+        else:
+            # Keep only violations that appear in both current and previous sets
+            self.potential_persistent_violations &= violated_set
+        
+        # Update violation counts (only if needed for statistics)
+        # This is an expensive operation, so we could make it optional
         for constraint in violated_constraints:
-            if constraint in self.violation_counts:
-                self.violation_counts[constraint] += 1
-            else:
-                self.violation_counts[constraint] = 1
+            frozen_constraint = frozenset(constraint)
+            self.violation_counts[frozen_constraint] = self.violation_counts.get(frozen_constraint, 0) + 1
 
     def fit(self,
             X: npt.NDArray[np.float64],
@@ -226,26 +236,25 @@ class ConstrainedKMeans:
             self: Fitted model
         """
 
+        # Initialize centers
+        print("Initializing cluster centers...", flush=True)
+        self.cluster_centers_ = self.initializer.initialize(
+            X, self.n_clusters, cl_constraints, self.random_state
+        )
+
+        # Initialize tracking variables
+        self.violation_counts = {}
+        self.violations_per_iteration = []
+        self.all_violations_history = []
+
         if self.w_cl > 0:
-            self.violation_counts = {}
-            self.violations_per_iteration = []
-            self.all_violations_history = []
-            # Build constraint graph only if needed
+            # Process constraints only once
             print("Building constraint graph...", flush=True)
             constraint_graph, sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
         else:
             # Empty placeholders when w_cl = 0
             constraint_graph = {}
             sorted_constraints = []
-            self.violation_counts = {}
-            self.violations_per_iteration = []
-            self.all_violations_history = []
-
-        # Initialize centers
-        print("Initializing cluster centers...", flush=True)
-        self.cluster_centers_ = self.initializer.initialize(
-            X, self.n_clusters, cl_constraints, self.random_state
-        )
 
         # Initialize history and tracking variables
         self.history_ = []
@@ -299,23 +308,9 @@ class ConstrainedKMeans:
 
         self.n_iter_ = iteration + 1
 
-        # Only identify persistent violations if constraints have weight
-        if self.w_cl > 0 and self.all_violations_history:
-            min_iterations = min(len(self.all_violations_history), self.n_iter_)
-            if min_iterations > 0:
-                persistent_candidates = [constraint for constraint, count
-                                    in self.violation_counts.items()
-                                    if count >= min_iterations]
-
-                self.persistent_violations = []
-                for constraint in persistent_candidates:
-                    all_iterations = True
-                    for i in range(min_iterations):
-                        if constraint not in self.all_violations_history[i]:
-                            all_iterations = False
-                            break
-                    if all_iterations:
-                        self.persistent_violations.append(constraint)
+        # Convert the persistent violations to a list format expected by the API
+        if self.w_cl > 0 and hasattr(self, 'potential_persistent_violations'):
+            self.persistent_violations = [tuple(sorted(v)) for v in self.potential_persistent_violations]
         else:
             self.persistent_violations = []
 
