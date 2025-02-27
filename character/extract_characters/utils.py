@@ -241,28 +241,6 @@ class Annotate:
         annotated_docs = self.already_processed
         total_docs = len(data)
 
-    #    # Process documents
-    #     with tqdm(total=total_docs) as pbar:
-    #         for doc_id, doc in data.items():
-    #             processed_count = 0
-    #             # Process docs and save at regular intervals
-    #             try:
-    
-    #                 doc = self.process_doc(doc)
-    #                 annotated_docs[doc_id] = doc
-    #                 processed_count += 1
-
-    #                 # Update the progress bar
-    #                 pbar.update(1)
-
-    #                 # Save annotated_docs at regular intervals
-    #                 if processed_count % save_interval == 0:
-    #                     self.save_results(annotated_docs)
-    #                     self.logger.info(f"Progress saved after processing {processed_count} docs.")
-
-    #             except Exception as e:
-    #                 self.logger.exception(f"Error processing doc {doc_id}: {e}")
-
         # Use a ThreadPoolExecutor for parallel processing
         self.logger.info(f"Processing docs with {num_workers} workers.")  
         with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
