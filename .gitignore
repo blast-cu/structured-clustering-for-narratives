@@ -190,8 +190,8 @@ ollama_log*.txt
 !/resources/.gitkeep
 
 # Corpus
-/corpus/*
-!/corpus/mfc/immigration/.gitkeep
-!/corpus/mfc/guncontrol/.gitkeep
-!/corpus/subframes/immigration/.gitkeep
-!/corpus/subframes/guncontrol/.gitkeep
+/data/*
+!/data/mfc/immigration/.gitkeep
+!/data/mfc/guncontrol/.gitkeep
+!/data/subframes/immigration/.gitkeep
+!/data/subframes/guncontrol/.gitkeep

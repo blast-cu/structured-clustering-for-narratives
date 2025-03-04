@@ -13,14 +13,14 @@
 #SBATCH --job-name=event_preprocess
 #SBATCH --output=logs/event.%j.log
 
-#module load anaconda
-#conda activate event
-#
-#mkdir -p "$SLURM_SCRATCH/cache/HF/transformers"
-#mkdir -p "$SLURM_SCRATCH/cache/HF/datasets"
-#
-#export TRANSFORMERS_CACHE="$SLURM_SCRATCH/cache/HF/transformers"
-#export HF_DATASETS_CACHE="$SLURM_SCRATCH/cache/HF/datasets"
+module load anaconda
+conda activate event
+
+mkdir -p "$SLURM_SCRATCH/cache/HF/transformers"
+mkdir -p "$SLURM_SCRATCH/cache/HF/datasets"
+
+export TRANSFORMERS_CACHE="$SLURM_SCRATCH/cache/HF/transformers"
+export HF_DATASETS_CACHE="$SLURM_SCRATCH/cache/HF/datasets"
 
 
 python3 -m spacy download en_core_web_lg
@@ -29,25 +29,25 @@ source="subframes" # subframes
 corpus="subframes/immigration"
 
 # Generate corpus.txt
-python3 ./data/gen_corpus.py \
-    --input_file ./corpus/${corpus}/corpus_labeled.json \
-    --save_path ./corpus/${corpus}/
+python3 ./preprocessing/gen_corpus.py \
+    --input_file ./data/${corpus}/corpus_labeled.json \
+    --save_path ./data/${corpus}/
 
 echo "gen_corpus.py done"
 
 
 # Parse Corpus and Extract Subject-Verb-Object Triplets
-python3 ./data/parse_corpus_and_extract_svo.py \
+python3 ./preprocessing/parse_corpus_and_extract_svo.py \
     --is_sentence 1 \
-    --input_file ./corpus/${corpus}/corpus.txt \
-    --save_path ./corpus/${corpus}/corpus_parsed_svo.pk
+    --input_file ./data/${corpus}/corpus.txt \
+    --save_path ./data/${corpus}/corpus_parsed_svo.pk
 
 echo "parse_corpus_and_extract_svo.py done"
 
 
 # Select Salient Verb Lemmas and Object Heads
-python3 ./data/select_salient_terms.py \
-    --corpus_w_svo_pickle ./corpus/${corpus}/corpus_parsed_svo.pk \
+python3 ./preprocessing/select_salient_terms.py \
+    --corpus_w_svo_pickle ./data/${corpus}/corpus_parsed_svo.pk \
     --min_verb_freq 3 \
     --min_obj_freq 3 \
     --top_verb_ratio 0.8 \
@@ -57,8 +57,8 @@ echo "select_salient_terms.py done"
 
 
 # Generate Features for Each Salient <Predicate Lemma, Object Head> Mention
-python3 ./data/generate_po_mention_features.py \
-    --corpus_w_svo_pickle ./corpus/${corpus}/corpus_parsed_svo.pk \
+python3 ./preprocessing/generate_po_mention_features.py \
+    --corpus_w_svo_pickle ./data/${corpus}/corpus_parsed_svo.pk \
     --top_k 50 \
     --gpu_id 0
 
@@ -66,18 +66,18 @@ echo "generate_po_mention_features.py done"
 
 
 # Disambiguate Predicate Senses
-python3 ./data/disambiguate_verb_sense.py \
-    --mention_file ./corpus/${corpus}/corpus_parsed_svo_salient_po_mention_features.pk \
-    --save_path ./corpus/${corpus}/po_mention_disambiguated.pk
+python3 ./preprocessing/disambiguate_verb_sense.py \
+    --mention_file ./data/${corpus}/corpus_parsed_svo_salient_po_mention_features.pk \
+    --save_path ./data/${corpus}/po_mention_disambiguated.pk
 
 echo "disambiguate_verb_sense.py done"
 
 
 # Generate Features for Each Salient <Predicate Sense, Object Head> Tuples
-python3 ./data/generate_po_tuple_features.py \
-    --mention_file ./corpus/${corpus}/corpus_parsed_svo_salient_po_mention_features.pk \
-    --sense_mapping ./corpus/${corpus}/po_mention_disambiguated.pk \
-    --save_file ./corpus/${corpus}/po_tuple_features_all_svos.pk \
+python3 ./preprocessing/generate_po_tuple_features.py \
+    --mention_file ./data/${corpus}/corpus_parsed_svo_salient_po_mention_features.pk \
+    --sense_mapping ./data/${corpus}/po_mention_disambiguated.pk \
+    --save_file ./data/${corpus}/po_tuple_features_all_svos.pk \
     --use_all_svos
 
 echo "generate_po_tuple_features.py done"
