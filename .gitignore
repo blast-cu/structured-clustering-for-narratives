@@ -181,4 +181,17 @@ logs/
 
 # Ollama log file
 ollama_log*.txt
-/data/immigration/annotated_event_chains.pickle
+
+# NLTK
+/nltk
+
+# Resources
+/resources/*
+!/resources/.gitkeep
+
+# Corpus
+/corpus/*
+!/corpus/mfc/immigration/.gitkeep
+!/corpus/mfc/guncontrol/.gitkeep
+!/corpus/subframes/immigration/.gitkeep
+!/corpus/subframes/guncontrol/.gitkeep
