@@ -16,12 +16,10 @@
 module load anaconda
 conda activate event
 
-mkdir -p "$SLURM_SCRATCH/cache/HF/transformers"
-mkdir -p "$SLURM_SCRATCH/cache/HF/datasets"
+mkdir -p "$SLURM_SCRATCH/cache/HF"
 
-export TRANSFORMERS_CACHE="$SLURM_SCRATCH/cache/HF/transformers"
-export HF_DATASETS_CACHE="$SLURM_SCRATCH/cache/HF/datasets"
-
+export HF_HOME="$SLURM_SCRATCH/cache/HF"
+export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 python3 -m spacy download en_core_web_lg
 
@@ -29,7 +27,7 @@ source="subframes" # subframes
 corpus="subframes/immigration"
 
 # Generate corpus.txt
-python3 ./preprocessing/gen_corpus.py \
+python3 ./preprocessing/${source}/gen_corpus.py \
     --input_file ./data/${corpus}/corpus_labeled.json \
     --save_path ./data/${corpus}/
 

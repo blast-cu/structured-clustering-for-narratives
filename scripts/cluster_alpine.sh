@@ -1,13 +1,12 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=ucb414_asc1
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=FAIL
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
 #SBATCH --time=1-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
+#SBATCH --partition=amilan
 #SBATCH --mem=50G
 #SBATCH --job-name=cluster_chains
 #SBATCH --output=logs/data.%j.log
