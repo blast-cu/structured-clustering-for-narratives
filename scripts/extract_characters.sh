@@ -1,8 +1,8 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
+
+#SBATCH --ntasks=4
+#SBATCH --partition=aa100
 
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=32
