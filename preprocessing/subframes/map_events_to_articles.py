@@ -32,7 +32,7 @@ def generate_event_2_subframes_map(subframes_corpus, processed_corpus, po_tuple_
                             'label': subframes_corpus_dict[doc_id]['label']}
                 text = subframes_corpus_dict[doc_id]['text']
                 event_idx = 0
-                for sent_id in sent_ids[1:]:
+                for sent_id in sent_ids:
                     sentence = get_line_from_corpus(processed_corpus, sent_id)
                     doc_dict['sentences'][str(sent_id)] = {}
                     doc_dict['sentences'][str(sent_id)]['text'] = sentence.strip()

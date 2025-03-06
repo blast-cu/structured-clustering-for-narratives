@@ -29,7 +29,7 @@ def main(input_file, save_path):
                 sent_id += 1
                 f.write(str(sent) + "\n")
 
-    with open(save_path + "doc_id_2_sent_ids_immigrants_labeled.json", "w+") as outfile:
+    with open(save_path + "doc_id_2_sent_ids_corpus_labeled.json", "w+") as outfile:
         json.dump(doc_id_2_sent_id, outfile)
 
 

@@ -94,9 +94,13 @@ def main(corpus_w_svo_pickle,
                 if verb_lemma.startswith("!"):  
                     verb_lemma = verb_lemma[1:]
                 if verb_lemma in salient_verbs:  # only save salient verb lemma features
-                    verb_embed = token_embeds[verb_index]
-                    verb_masked_sent = " ".join(token_list[:verb_index] + ["[MASK]"] + token_list[verb_index+1:])
-                    verb_expand_res = predict_masked_words(verb_masked_sent, mlm_model, tokenizer, top_k)[0]
+                    try:
+                        verb_embed = token_embeds[verb_index]
+                        verb_masked_sent = " ".join(token_list[:verb_index] + ["[MASK]"] + token_list[verb_index+1:])
+                        verb_expand_res = predict_masked_words(verb_masked_sent, mlm_model, tokenizer, top_k)[0]
+                    except:
+                        verb_embed = None
+                        verb_expand_res = None
                 else:
                     verb_embed = None
                     verb_expand_res = None

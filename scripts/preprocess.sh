@@ -1,15 +1,15 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blanca-blast-lecs
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=4
+#SBATCH --ntasks-per-node=16
 #SBATCH --time=1-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
+#SBATCH --qos=blanca-blast-lecs
+#SBATCH --partition=blanca-blast-lecs
 #SBATCH --gres=gpu:1
-#SBATCH --mem=15G
+#SBATCH --mem=50G
 #SBATCH --job-name=event_preprocess
 #SBATCH --output=logs/event.%j.log
 
@@ -23,10 +23,15 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 python3 -m spacy download en_core_web_lg
 
-source="subframes" # subframes
-corpus="subframes/immigration"
+source="mfc" # mfc or subframes
+corpus="mfc/guncontrol"
 
-# Generate corpus.txt
+# # ONLY for Subframes - Parse Subframes data structured to generate corpus_labeled.json
+# python3 ./preprocessing/${source}/parse_subframes_data_structure.py \
+#     --input_file ./data/${corpus}/article_data.pkl \
+#     --save_path ./data/${corpus}/
+
+Generate corpus.txt
 python3 ./preprocessing/${source}/gen_corpus.py \
     --input_file ./data/${corpus}/corpus_labeled.json \
     --save_path ./data/${corpus}/
@@ -82,12 +87,22 @@ echo "generate_po_tuple_features.py done"
 
 
 # Generate files for mapping each event (and frequency) to its original article and sentence
-#python3 ./data/${source}/map_events_to_articles.py \
-#    --mfc_corpus ./corpus/${corpus}/corpus_labeled.json \
-#    --processed_corpus ./corpus/${corpus}/corpus.txt \
-#    --mfc_codes ./corpus/${source}/codes.json \
-#    --po_tuple_features ./corpus/${corpus}/po_tuple_features_all_svos.pk \
-#    --doc_2_sent ./corpus/${corpus}/doc_id_2_sent_ids_immigrants_labeled.json \
-#    --output_file ./corpus/${corpus}/processed_corpus.json
-#
-#echo "map_article_event_freq.py done"
+python3 ./preprocessing/${source}/map_events_to_articles.py \
+    --mfc_corpus ./data/${corpus}/corpus_labeled.json \
+    --processed_corpus ./data/${corpus}/corpus.txt \
+    --mfc_codes ./data/${source}/codes.json \
+    --po_tuple_features ./data/${corpus}/po_tuple_features_all_svos.pk \
+    --doc_2_sent ./data/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
+    --output_file ./data/${corpus}/processed_corpus.json
+
+echo "map_article_event_freq.py done"
+
+
+# python3 ./preprocessing/${source}/map_events_to_articles.py \
+#   --subframes_corpus ./data/${corpus}/corpus_labeled.json \
+#   --processed_corpus ./data/${corpus}/corpus.txt \
+#   --po_tuple_features ./data/${corpus}/po_tuple_features_all_svos.pk \
+#   --doc_2_sent ./data/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
+#   --output_file ./data/${corpus}/processed_corpus.json
+
+# echo "map_article_event_freq.py done"

@@ -108,7 +108,7 @@ def predict_masked_words(sentence_w_mask, model, tokenizer, top_k=50):
     sentence_w_mask: `str`, a single sentence with [MASK] token
     model: a BertForMaskedLM model
     """
-    inputs = tokenizer(sentence_w_mask, return_tensors="pt").to(model.device)
+    inputs = tokenizer(sentence_w_mask, padding=True, truncation=True, max_length=512, return_tensors="pt").to(model.device)
     masked_position_indice = torch.where(inputs.input_ids[0] == tokenizer.mask_token_id)
     with torch.no_grad():
         logits = model(**inputs).logits
