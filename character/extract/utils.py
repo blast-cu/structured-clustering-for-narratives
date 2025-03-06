@@ -264,7 +264,7 @@ class Annotate:
                         # Save annotated_docs at regular intervals
                         if processed_count % save_interval == 0:
                             self.save_results(annotated_docs)
-                            self.logger.info(f"Progress saved after processing {processed_count} docs.")
+                            self.logger.info(f"Progress saved to {self.config.out_filename} after processing {processed_count} docs.")
 
                     except Exception as e:
                         self.logger.exception(f"Error processing doc {doc_idx}: {e}")
