@@ -151,10 +151,17 @@ class Annotate:
             - dict: {"text": str}
         """
         entry = {}
-        article_sents = doc_data["sentences"]
-        article_sents_text = [s["text"] for s in article_sents.values()]
-        article_text = " ".join(article_sents_text).strip()
-        entry["text"] = article_text + "\n"
+        if 'sentences' in doc_data.keys():
+            article_sents = doc_data["sentences"]
+            article_sents_text = [s["text"] for s in article_sents.values()]
+            article_text = " ".join(article_sents_text).strip()
+            entry["text"] = article_text + "\n"
+
+        elif 'text' in doc_data.keys():
+            entry["text"] = doc_data["text"] + "\n"
+
+        else:
+            raise ValueError("No text found in doc_data.")
 
         return entry
 
