@@ -27,33 +27,34 @@ class KmeansClusterer():
         self.data = data
         self.vectors = self.vectorizer.fit_transform(data)
 
-        # self.frequency = {}
-        # for d in data:
-        #     if d not in self.frequency:
-        #         self.frequency[d] = 1
-        #     else:
-        #         self.frequency[d] += 1
-
-
-    def run(self, k):
+    def fit(self, k):
 
         kmeans = KMeans(n_clusters=k, n_init='auto', random_state=14) # Specify the number of clusters
         kmeans.fit(self.vectors)
         labels = kmeans.labels_
-
-        self.cluster_dict = {}
+        return labels
+    
+    def clean_labels(self, labels):
+        cluster_dict = {}
         for i, label in enumerate(labels):
             current_data = self.data[i]
             label = str(label)
-            if label not in self.cluster_dict:
-                self.cluster_dict[label] = []
-            self.cluster_dict[label].append(current_data)
+            if label not in cluster_dict:
+                cluster_dict[label] = []
+            cluster_dict[label].append(current_data)
         
-        for cluster, item in self.cluster_dict.items():  # sort alphabetically
-            self.cluster_dict[cluster] = sorted(item)
+        for cluster, item in cluster_dict.items():  # sort alphabetically
+            cluster_dict[cluster] = sorted(item)
 
         # sort keys
-        self.cluster_dict = dict(sorted(self.cluster_dict.items(), key=lambda item: int(item[0])))
+        cluster_dict = dict(sorted(cluster_dict.items(), key=lambda item: int(item[0])))
+        return cluster_dict
+
+
+    def run(self, k):
+        labels = self.fit(k)
+        self.cluster_dict = self.clean_labels(labels)
+
 
     def print_clusters(self):
         for cluster, item in self.cluster_dict.items():
@@ -90,7 +91,6 @@ if __name__ == "__main__":
     characters = [item for sublist in character_strings for item in sublist]  # flatten the list of lists
 
     # call class
-
     clusterer = KmeansClusterer(characters)
     clusterer.run(k=args.k)
     # clusterer.print_clusters()
