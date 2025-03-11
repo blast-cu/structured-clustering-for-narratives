@@ -169,9 +169,6 @@ class Annotate:
         """
         Set the head messages for the conversations.
         """
-        # self.head_msgs = []
-        # start with the system prompt.
-        # self.head_msgs.append({"role": "system", "content": self.prompt_data["system_prompt"]})
         self.system_prompt = self.prompt_data["system_prompt"]
 
         # implement n shot prompting.
@@ -183,9 +180,8 @@ class Annotate:
                 shots.append(user_turn + "\n" + assissant_turn)
 
             self.head_user_prompt = "\n\n".join(shots)
-            # self.head_msgs.append({"role": "user", "content": head_user_prompt})
+
         else:
-            # self.head_msgs.append({"role": "user", "content": ""})
             self.head_user_message = ""
 
 

@@ -32,4 +32,4 @@ echo "Waiting for Ollama server to start"
 sleep 1m
 
 host_ip=$(hostname -i)
-python3 -m character.extract.run --host $host_ip --port 9999 --config default.yaml --dataset immigration_subframes_corpus.json --prompt_file immigration_default.json
+python3 -m character.extract.run --host $host_ip --port 9999 --config default.yaml --dataset guncontrol_subframes_corpus.json --prompt_file guncontrol_default.json
