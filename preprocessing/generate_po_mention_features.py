@@ -128,10 +128,15 @@ def main(corpus_w_svo_pickle,
                             obj_head_embed = None
                             obj_head_expand_res = None
                         else:
-                            obj_head_index = obj_range[obj_head_info['obj_head_relative_index']]
-                            obj_head_embed = token_embeds[obj_head_index]
-                            obj_head_masked_sent = " ".join(token_list[:obj_head_index] + ["[MASK]"] + token_list[obj_head_index+1:])
-                            obj_head_expand_res = predict_masked_words(obj_head_masked_sent, mlm_model, tokenizer, top_k)[0]
+                            try:
+                                obj_head_index = obj_range[obj_head_info['obj_head_relative_index']]
+                                obj_head_embed = token_embeds[obj_head_index]
+                                obj_head_masked_sent = " ".join(token_list[:obj_head_index] + ["[MASK]"] + token_list[obj_head_index+1:])
+                                obj_head_expand_res = predict_masked_words(obj_head_masked_sent, mlm_model, tokenizer, top_k)[0]
+                            except:
+                                obj_head_index = None
+                                obj_head_embed = None
+                                obj_head_expand_res = None
 
                 svo_id2features[svo_index] = {
                     "verb": verb_lemma,
