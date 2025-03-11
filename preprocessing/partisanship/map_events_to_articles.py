@@ -13,11 +13,11 @@ def get_line_from_corpus(file, line_number):
             if i == line_number:
                 return line
 
-def generate_event_2_subframes_map(subframes_corpus, processed_corpus, po_tuple_features, doc_2_sent):
-    print('inside generate_event_2_generate_event_2_subframes_map')
+def generate_event_2_articles_map(partisanship_corpus, processed_corpus, po_tuple_features, doc_2_sent):
+    print('inside generate_event_2_generate_event_2_articles_map')
 
-    with open(subframes_corpus, 'r') as f:
-        subframes_corpus_dict = json.load(f)
+    with open(partisanship_corpus, 'r') as f:
+        partisanship_corpus_dict = json.load(f)
 
     with open(po_tuple_features, 'rb') as svos_pkl_file:
         mydict = pk.load(svos_pkl_file)
@@ -27,10 +27,10 @@ def generate_event_2_subframes_map(subframes_corpus, processed_corpus, po_tuple_
             for doc_id in tqdm(doc_id_2_sent_ids):
                 sent_ids = doc_id_2_sent_ids[doc_id]
                 doc_dict = {'corpus_id': doc_id,
-                            'text': subframes_corpus_dict[doc_id]['text'],
+                            'text': partisanship_corpus_dict[doc_id]['text'],
                             'sentences': {},
-                            'label': subframes_corpus_dict[doc_id]['label']}
-                text = subframes_corpus_dict[doc_id]['text']
+                            'label': partisanship_corpus_dict[doc_id]['label']}
+                text = partisanship_corpus_dict[doc_id]['text']
                 event_idx = 0
                 for sent_id in sent_ids:
                     sentence = get_line_from_corpus(processed_corpus, sent_id)
@@ -62,7 +62,7 @@ def write_to_file(output_file):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--subframes_corpus", help="mfc corpus file")
+    parser.add_argument("--partisanship_corpus", help="mfc corpus file")
     parser.add_argument("--processed_corpus", help="processed mfc corpus file")
     parser.add_argument("--po_tuple_features", help="po tuple features file")
     parser.add_argument("--doc_2_sent", help="doc id to sentence id map file")
@@ -70,5 +70,5 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(vars(args))
 
-    generate_event_2_subframes_map(args.subframes_corpus, args.processed_corpus, args.po_tuple_features, args.doc_2_sent)
+    generate_event_2_articles_map(args.partisanship_corpus, args.processed_corpus, args.po_tuple_features, args.doc_2_sent)
     write_to_file(args.output_file)

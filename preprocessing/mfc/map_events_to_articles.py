@@ -24,7 +24,7 @@ def get_line_from_corpus(file, line_number):
                 return line
 
 
-def generate_event_2_mfc_map(mfc_corpus, processed_corpus, po_tuple_features, doc_2_sent):
+def generate_event_2_articles_map(mfc_corpus, processed_corpus, po_tuple_features, doc_2_sent):
     print('inside generate_event_2_mfc_map')
 
     with open(po_tuple_features, 'rb') as svos_pkl_file:
@@ -143,7 +143,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(vars(args))
 
-    generate_event_2_mfc_map(args.mfc_corpus, args.processed_corpus, args.po_tuple_features, args.doc_2_sent)
+    generate_event_2_articles_map(args.mfc_corpus, args.processed_corpus, args.po_tuple_features, args.doc_2_sent)
     add_mfc_frame(args.mfc_corpus, args.mfc_codes)
     add_mfc_frame_phrase(args.mfc_corpus, args.mfc_codes)
     write_to_file(args.output_file)
