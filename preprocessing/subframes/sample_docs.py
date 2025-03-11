@@ -44,7 +44,7 @@ def sample_documents(documents_dict, sample_size, label_key="label", label_value
             # Take all available documents with this label
             selected_doc_ids = available_docs
             print(
-                f"Warning: Only {len(available_docs)} documents available with label '{label}', requested {num_to_sample}")
+                f"Warning: Only {len(available_docs)} documents available with label '{label}', requested {num_to_sample}", flush=True)
         else:
             # Randomly sample wit4hout replacement
             selected_doc_ids = random.sample(available_docs, num_to_sample)
@@ -54,8 +54,8 @@ def sample_documents(documents_dict, sample_size, label_key="label", label_value
             sampled_documents[doc_id] = documents_dict[doc_id]
 
     # Print statistics about the sampling
-    print(f"Requested sample size: {sample_size}")
-    print(f"Actual sample size: {len(sampled_documents)}")
+    print(f"Requested sample size: {sample_size}", flush=True)
+    print(f"Actual sample size: {len(sampled_documents)}", flush=True)
 
     # Count labels in sample for validation
     sampled_label_counts = defaultdict(int)
@@ -63,9 +63,9 @@ def sample_documents(documents_dict, sample_size, label_key="label", label_value
         if label_key in doc:
             sampled_label_counts[doc[label_key]] += 1
 
-    print("\nLabel distribution in sample:")
+    print("\nLabel distribution in sample:", flush=True)
     for label in label_values:
-        print(f"{label}: {sampled_label_counts.get(label, 0)} documents")
+        print(f"{label}: {sampled_label_counts.get(label, 0)} documents", flush=True)
 
     return sampled_documents
 
@@ -77,7 +77,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample_size", type=int, default=3000, help="number of documents to sample")
     parser.add_argument("--output_file", help="output file with sampled dataset")
     args = parser.parse_args()
-    print(vars(args))
+    print(vars(args), flush=True)
 
     with open(args.corpus, 'r') as f:
         documents = json.load(f)

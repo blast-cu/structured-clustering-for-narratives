@@ -1,13 +1,13 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-blast-lecs
+#SBATCH --account=blanca-curc-gpu
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=16
 #SBATCH --time=1-00:00:00
-#SBATCH --qos=blanca-blast-lecs
-#SBATCH --partition=blanca-blast-lecs
+#SBATCH --qos=blanca-curc-gpu
+#SBATCH --partition=blanca-curc-gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=50G
 #SBATCH --job-name=event_preprocess
@@ -26,12 +26,12 @@ python3 -m spacy download en_core_web_lg
 source="mfc" # mfc or subframes
 corpus="mfc/guncontrol"
 
-# # ONLY for Subframes - Parse Subframes data structured to generate corpus_labeled.json
+# ONLY for Subframes - Parse Subframes data structured to generate corpus_labeled.json
 # python3 ./preprocessing/${source}/parse_subframes_data_structure.py \
 #     --input_file ./data/${corpus}/article_data.pkl \
 #     --save_path ./data/${corpus}/
 
-Generate corpus.txt
+# Generate corpus.txt
 python3 ./preprocessing/${source}/gen_corpus.py \
     --input_file ./data/${corpus}/corpus_labeled.json \
     --save_path ./data/${corpus}/
@@ -86,7 +86,7 @@ python3 ./preprocessing/generate_po_tuple_features.py \
 echo "generate_po_tuple_features.py done"
 
 
-# Generate files for mapping each event (and frequency) to its original article and sentence
+# MFC -Generate files for mapping each event (and frequency) to its original article and sentence
 python3 ./preprocessing/${source}/map_events_to_articles.py \
     --mfc_corpus ./data/${corpus}/corpus_labeled.json \
     --processed_corpus ./data/${corpus}/corpus.txt \
@@ -97,7 +97,7 @@ python3 ./preprocessing/${source}/map_events_to_articles.py \
 
 echo "map_article_event_freq.py done"
 
-
+# Partisanship -Generate files for mapping each event (and frequency) to its original article and sentence
 # python3 ./preprocessing/${source}/map_events_to_articles.py \
 #   --subframes_corpus ./data/${corpus}/corpus_labeled.json \
 #   --processed_corpus ./data/${corpus}/corpus.txt \
@@ -106,3 +106,10 @@ echo "map_article_event_freq.py done"
 #   --output_file ./data/${corpus}/processed_corpus.json
 
 # echo "map_article_event_freq.py done"
+
+# Sample documents from full dataset
+python3 ./preprocessing/${source}/sample_docs.py \
+  --corpus ./data/${corpus}/processed_corpus.json \
+  --output_file ./data/${corpus}/processed_corpus_3000.json
+
+echo "sample_docs.py done"

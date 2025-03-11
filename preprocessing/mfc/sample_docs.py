@@ -87,8 +87,8 @@ def sample_documents(documents_dict, sample_size=3000, ignore_frames=None):
             break
 
     # Print statistics about the sampling
-    print(f"Requested sample size: {sample_size}")
-    print(f"Actual sample size: {len(sampled_documents)}")
+    print(f"Requested sample size: {sample_size}", flush=True)
+    print(f"Actual sample size: {len(sampled_documents)}", flush=True)
 
     # Count frames in sample for validation
     sampled_frame_counts = defaultdict(int)
@@ -98,9 +98,9 @@ def sample_documents(documents_dict, sample_size=3000, ignore_frames=None):
             primary_frame = primary_frame[0]
         sampled_frame_counts[primary_frame] += 1
 
-    print("\nFrame distribution in sample:")
+    print("\nFrame distribution in sample:", flush=True)
     for frame in sorted(sampled_frame_counts.keys()):
-        print(f"{frame}: {sampled_frame_counts[frame]} documents")
+        print(f"{frame}: {sampled_frame_counts[frame]} documents", flush=True)
 
     return sampled_documents
 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--sample_size", type=int, default=3000, help="number of documents to sample")
     parser.add_argument("--output_file", help="output file with sampled dataset")
     args = parser.parse_args()
-    print(vars(args))
+    print(vars(args), flush=True)
 
     with open(args.corpus, 'r') as f:
         documents = json.load(f)
