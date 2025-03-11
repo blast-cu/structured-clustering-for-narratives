@@ -4,7 +4,9 @@ import random
 from collections import defaultdict
 
 
-def balanced_sample_documents(documents_dict, sample_size=3000, ignore_frames=None):
+def sample_documents(documents_dict, sample_size=3000, ignore_frames=None):
+    random.seed(42)
+
     # Group documents by their primary frame
     frame_groups = defaultdict(list)
 
@@ -114,7 +116,7 @@ if __name__ == "__main__":
     with open(args.corpus, 'r') as f:
         documents = json.load(f)
 
-    sampled_docs = balanced_sample_documents(documents, sample_size=args.sample_size)
+    sampled_docs = sample_documents(documents, sample_size=args.sample_size)
 
     with open(args.output_file, 'w') as f:
         json.dump(sampled_docs, f, indent=2)
