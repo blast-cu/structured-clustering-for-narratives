@@ -10,10 +10,13 @@ from utils.lemmatize import lemmatize_sentence
 output_dict = {}
 
 
-def get_text_from_corpus(file, article_id):
+def get_text_from_corpus(file, article_id, domain):
     with open(file, 'r') as f:
         corpus_dict = json.load(f)
-        id = 'Immigration1.0-' + article_id.split('-')[1]
+        if domain == 'immigration':
+            id = 'Immigration1.0-' + article_id.split('-')[1]
+        elif domain == 'guncontrol':
+            id = 'gun_control1.0-' + article_id.split('-')[1]
         return corpus_dict[id]['text']
 
 
@@ -24,7 +27,7 @@ def get_line_from_corpus(file, line_number):
                 return line
 
 
-def generate_event_2_mfc_map(mfc_corpus, processed_corpus, po_tuple_features, doc_2_sent):
+def generate_event_2_mfc_map(mfc_corpus, domain, processed_corpus, po_tuple_features, doc_2_sent):
     print('inside generate_event_2_mfc_map')
 
     with open(po_tuple_features, 'rb') as svos_pkl_file:
@@ -37,7 +40,7 @@ def generate_event_2_mfc_map(mfc_corpus, processed_corpus, po_tuple_features, do
                 doc_dict = {'corpus_id': get_line_from_corpus(processed_corpus, sent_ids[0]).strip(),
                             'text': '',
                             'sentences': {}}
-                text = get_text_from_corpus(mfc_corpus, doc_dict['corpus_id'])
+                text = get_text_from_corpus(mfc_corpus, doc_dict['corpus_id'], domain)
                 event_idx = 0
                 for sent_id in sent_ids[1:]:
                     sentence = get_line_from_corpus(processed_corpus, sent_id)
@@ -62,7 +65,7 @@ def generate_event_2_mfc_map(mfc_corpus, processed_corpus, po_tuple_features, do
                 output_dict[doc_id] = doc_dict
 
 
-def add_mfc_frame(mfc_corpus, mfc_codes):
+def add_mfc_frame(mfc_corpus, mfc_codes, domain):
     print('inside add_mfc_frame')
 
     with open(mfc_corpus, 'r') as f:
@@ -70,7 +73,10 @@ def add_mfc_frame(mfc_corpus, mfc_codes):
     with open(mfc_codes, 'r') as f:
         mfc_frames = json.load(f)
     for doc_id in tqdm(output_dict):
-        id = 'Immigration1.0-' + output_dict[doc_id]['corpus_id'].split('-')[1]
+        if domain == 'immigration':
+            id = 'Immigration1.0-' + output_dict[doc_id]['corpus_id'].split('-')[1]
+        elif domain == 'guncontrol':
+            id = 'gun_control1.0-' + output_dict[doc_id]['corpus_id'].split('-')[1]
         article = corpus_dict[id]
         output_dict[doc_id]['primary_frame'] = mfc_frames[str(article['primary_frame'])]
         for sentence_id in output_dict[doc_id]['sentences']:
@@ -88,7 +94,7 @@ def add_mfc_frame(mfc_corpus, mfc_codes):
                 annotator_idx += 1
 
 
-def add_mfc_frame_phrase(mfc_corpus, mfc_codes):
+def add_mfc_frame_phrase(mfc_corpus, mfc_codes, domain):
     print('inside add_mfc_frame_phrase')
 
     with open(mfc_corpus, 'r') as f:
@@ -96,7 +102,10 @@ def add_mfc_frame_phrase(mfc_corpus, mfc_codes):
     with open(mfc_codes, 'r') as f:
         mfc_frames = json.load(f)
     for doc_id in tqdm(output_dict):
-        id = 'Immigration1.0-' + output_dict[doc_id]['corpus_id'].split('-')[1]
+        if domain == 'immigration':
+            id = 'Immigration1.0-' + output_dict[doc_id]['corpus_id'].split('-')[1]
+        elif domain == 'guncontrol':
+            id = 'gun_control1.0-' + output_dict[doc_id]['corpus_id'].split('-')[1]
         article = corpus_dict[id]
         output_dict[doc_id]['primary_frame'] = mfc_frames[str(article['primary_frame'])]
         text = output_dict[doc_id]['text']
@@ -135,6 +144,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--mfc_corpus", help="mfc corpus file")
+    parser.add_argument("--domain", help="mfc domain")
     parser.add_argument("--processed_corpus", help="processed mfc corpus file")
     parser.add_argument("--mfc_codes", help="mfc codes file")
     parser.add_argument("--po_tuple_features", help="po tuple features file")
@@ -143,7 +153,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print(vars(args))
 
-    generate_event_2_mfc_map(args.mfc_corpus, args.processed_corpus, args.po_tuple_features, args.doc_2_sent)
-    add_mfc_frame(args.mfc_corpus, args.mfc_codes)
-    add_mfc_frame_phrase(args.mfc_corpus, args.mfc_codes)
+    generate_event_2_mfc_map(args.mfc_corpus, args.domain, args.processed_corpus, args.po_tuple_features, args.doc_2_sent)
+    add_mfc_frame(args.mfc_corpus, args.mfc_codes, args.domain)
+    add_mfc_frame_phrase(args.mfc_corpus, args.mfc_codes, args.domain)
     write_to_file(args.output_file)

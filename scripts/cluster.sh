@@ -33,4 +33,4 @@ python3 ./clustering/weighted_pckmeans.py -c "immigration" -k $1 -w $2
 
 # Running regression
 
-python3 ./prediction_models/regression.py -c "immigration" -k $1 -w $2 --save_results
+python3 ./models/regression.py -c "immigration" -k $1 -w $2 --save_results
