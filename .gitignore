@@ -193,5 +193,5 @@ ollama_log*.txt
 /data/*
 !/data/mfc/immigration/.gitkeep
 !/data/mfc/guncontrol/.gitkeep
-!/data/subframes/immigration/.gitkeep
-!/data/subframes/guncontrol/.gitkeep
+!/data/partisanship/immigration/.gitkeep
+!/data/partisanship/guncontrol/.gitkeep

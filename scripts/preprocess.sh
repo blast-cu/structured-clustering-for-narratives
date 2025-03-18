@@ -23,11 +23,11 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 python3 -m spacy download en_core_web_lg
 
-source="subframes" # mfc or subframes
-corpus="guncontrol" # immigration or guncontrol
+source="mfc" # mfc or partisanship
+corpus="mfc/guncontrol"
 
-# ONLY for Subframes - Parse Subframes data structured to generate corpus_labeled.json
-# python3 ./preprocessing/${source}/parse_subframes_data_structure.py \
+# ONLY for Partisanship - Parse Partisanship data structured to generate corpus_labeled.json
+# python3 ./preprocessing/${source}/parse_partisanship_data_structure.py \
 #     --input_file ./data/${corpus}/article_data.pkl \
 #     --save_path ./data/${corpus}/
 
@@ -99,12 +99,13 @@ echo "generate_po_tuple_features.py done"
 # echo "map_article_event_freq.py done"
 
 # Partisanship -Generate files for mapping each event (and frequency) to its original article and sentence
-python3 ./preprocessing/${source}/map_events_to_articles.py \
-  --subframes_corpus ./data/${source}/${corpus}/corpus_labeled.json \
-  --processed_corpus ./data/${source}/${corpus}/corpus.txt \
-  --po_tuple_features ./data/${source}/${corpus}/po_tuple_features_all_svos.pk \
-  --doc_2_sent ./data/${source}/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
-  --output_file ./data/${source}/${corpus}/processed_corpus.json
+
+# python3 ./preprocessing/${source}/map_events_to_articles.py \
+#   --partisanship_corpus ./data/${corpus}/corpus_labeled.json \
+#   --processed_corpus ./data/${corpus}/corpus.txt \
+#   --po_tuple_features ./data/${corpus}/po_tuple_features_all_svos.pk \
+#   --doc_2_sent ./data/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
+#   --output_file ./data/${corpus}/processed_corpus.json
 
 echo "map_article_event_freq.py done"
 

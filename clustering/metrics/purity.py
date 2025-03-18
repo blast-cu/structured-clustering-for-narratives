@@ -27,6 +27,50 @@ def prepare_data(chain_annotations):
     return role_labels, stance_labels
 
 
+def prepare_data_top_k(top_k, embeddings, centroids, cluster_labels, chain_annotations):
+    clusters = {}
+    for index, label in enumerate(cluster_labels):
+        if label not in clusters:
+            clusters[label] = [index]
+        else:
+            clusters[label].append(index)
+
+    clusters_top_k = {}
+    for cluster_idx, cluster in clusters.items():
+        cluster_embs = embeddings[cluster]
+        centroid_embs = centroids[cluster_idx]
+        distances = np.linalg.norm(cluster_embs - centroid_embs, axis=1)
+
+        k = max(1, int(len(cluster) * top_k / 100))
+        closest_indices_local = np.argsort(distances)[:k]
+        closest_indices_global = [cluster[idx] for idx in closest_indices_local]
+        clusters_top_k[cluster_idx] = closest_indices_global
+
+    cluster_labels_top_k = []
+    role_labels_top_k = []
+    stance_labels_top_k = []
+
+    for cluster_idx, cluster in clusters_top_k.items():
+        for idx in cluster:
+            chain = chain_annotations[idx]
+            if chain['annotation'] is None:
+                role_labels_top_k.append('None')
+                stance_labels_top_k.append('None')
+            else:
+                if chain['annotation']['role'] is not None:
+                    role_labels_top_k.append(chain['annotation']['role'])
+                else:
+                    role_labels_top_k.append('None')
+
+                if chain['annotation']['stance'] is not None:
+                    stance_labels_top_k.append(chain['annotation']['stance'])
+                else:
+                    stance_labels_top_k.append('None')
+            cluster_labels_top_k.append(cluster_idx)
+
+    return role_labels_top_k, stance_labels_top_k, cluster_labels_top_k
+
+
 def purity(true_labels, predicted_clusters):
     # Convert string labels to numeric if needed
     le = LabelEncoder()
@@ -43,23 +87,31 @@ def purity(true_labels, predicted_clusters):
 
 if __name__ == '__main__':
     # Load data
-    with open('./data/immigration/embeddings.pickle', 'rb') as f:
+    with open('../../data/immigration/embeddings.pickle', 'rb') as f:
         embeddings = pickle.load(f)
 
-    with open('./data/immigration/grid_search_results.json', 'r') as f:
+    with open('../../data/immigration/grid_search_results.json', 'r') as f:
         results = json.load(f)
 
     updated_results = []
+    top_k = None
 
     for result in tqdm(results):
         num_clusters = result['num_clusters']
         constraint_weight = result['constraint_weight']
 
-        with open(f'./data/immigration/clusters_{num_clusters}_{constraint_weight}.pickle', 'rb') as f:
+        with open(f'../../data/immigration/clusters_{num_clusters}'
+                  f'_{constraint_weight}.pickle', 'rb') as f:
             clusters = pickle.load(f)
 
-        role_labels, stance_labels = prepare_data(embeddings['chains'])
-        cluster_labels = clusters['labels']
+        if top_k is not None:
+            role_labels, stance_labels, cluster_labels = prepare_data_top_k(top_k, embeddings['embs'],
+                                                                            clusters['cluster_centers'],
+                                                                            clusters['labels'],
+                                                                            embeddings['chains'])
+        else:
+            role_labels, stance_labels = prepare_data(embeddings['chains'])
+            cluster_labels = clusters['labels']
 
         assert len(role_labels) == len(cluster_labels)
         assert len(stance_labels) == len(cluster_labels)
@@ -78,5 +130,5 @@ if __name__ == '__main__':
             'average_purity': average_purity
         })
 
-    with open('./data/immigration/grid_search_results_updated.json', 'w') as f:
+    with open('../../data/immigration/grid_search_results_updated.json', 'w') as f:
         json.dump(updated_results, f, indent=4)
