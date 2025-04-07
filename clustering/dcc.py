@@ -274,7 +274,7 @@ if __name__ == '__main__':
     parser.add_argument('--epochs', metavar='EPOCHS', default=100, type=int, help='maximum number of epochs')
     parser.add_argument('--weight_pairwise', metavar='WEIGHT_PAIRWISE', default=0.1, type=float,
                         help='weight for cannot-link constraints')
-    parser.add_argument('--batch-size', type=int, default=256, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='input batch size for training (default: 256)')
 
     args = parser.parse_args()
@@ -297,6 +297,7 @@ if __name__ == '__main__':
     X = data['embs']
     cl_ind1, cl_ind2 = DCC.get_constraint_pairs(data['constraints'])
 
-    y_pred = dcc.fit(cl_ind1=cl_ind1, cl_ind2=cl_ind2, X=X, cl_penalty=args.weight_pairwise, num_epochs=args.epochs)
+    y_pred = dcc.fit(cl_ind1=cl_ind1, cl_ind2=cl_ind2, X=X, cl_penalty=args.weight_pairwise, num_epochs=args.epochs,
+                     batch_size=args.batch_size)
 
     dcc.save(config, y_pred, args.weight_pairwise)
