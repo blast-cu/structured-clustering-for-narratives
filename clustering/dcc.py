@@ -294,7 +294,7 @@ if __name__ == '__main__':
     dcc = DCC(input_dim=784, z_dim=100, n_clusters=args.k, encodeLayer=[500, 500, 2000],
               decodeLayer=[2000, 500, 500], activation="relu", dropout=0)
 
-    X = data['embs']
+    X = torch.from_numpy(data['embs'])
     cl_ind1, cl_ind2 = DCC.get_constraint_pairs(data['constraints'])
 
     y_pred = dcc.fit(cl_ind1=cl_ind1, cl_ind2=cl_ind2, X=X, cl_penalty=args.weight_pairwise, num_epochs=args.epochs,
