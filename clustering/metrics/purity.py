@@ -90,7 +90,7 @@ if __name__ == '__main__':
     with open('../../data/immigration/embeddings.pickle', 'rb') as f:
         embeddings = pickle.load(f)
 
-    with open('../../data/immigration/grid_search_results.json', 'r') as f:
+    with open('../../data/immigration/dcc_grid_search_results.json', 'r') as f:
         results = json.load(f)
 
     updated_results = []
@@ -100,7 +100,7 @@ if __name__ == '__main__':
         num_clusters = result['num_clusters']
         constraint_weight = result['constraint_weight']
 
-        with open(f'../../data/immigration/clusters_{num_clusters}'
+        with open(f'../../data/immigration/dcc_clusters_{num_clusters}'
                   f'_{constraint_weight}.pickle', 'rb') as f:
             clusters = pickle.load(f)
 
@@ -130,5 +130,5 @@ if __name__ == '__main__':
             'average_purity': average_purity
         })
 
-    with open('../../data/immigration/grid_search_results_updated.json', 'w') as f:
+    with open('../../data/immigration/dcc_grid_search_results_updated.json', 'w') as f:
         json.dump(updated_results, f, indent=4)
