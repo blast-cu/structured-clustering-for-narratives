@@ -1,0 +1,797 @@
+import argparse
+import os
+import pickle
+import random
+from typing import Optional, Dict, List, Tuple
+
+import numpy as np
+import torch
+from datasets import Dataset
+from pyhocon import ConfigFactory
+from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
+from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss
+from tqdm import tqdm
+
+from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
+from clustering.weighted_pckmeans import ConstrainedKMeans
+
+
+class SBERTConstrainedClusteringTrainer:
+    """
+    EM-style training framework that alternates between SBERT fine-tuning and constrained KMeans
+    to learn constraint-aware embeddings
+    """
+
+    def __init__(self,
+                 base_model_name: str = 'all-MiniLM-L6-v2',
+                 max_iterations: int = 5,
+                 positive_threshold: float = 0.75,
+                 negative_threshold: float = 0.5,
+                 batch_size: int = 16,
+                 epochs_per_iteration: int = 3,
+                 warmup_steps: int = 100,
+                 learning_rate: float = 2e-5,
+                 save_dir: str = 'results',
+                 # Example memory parameters
+                 max_example_memory: int = 5000,
+                 memory_decay_factor: float = 0.0,
+                 # Dataset generation parameters
+                 max_anchors: int = 1000,
+                 max_comparisons_per_anchor: int = 100,
+                 target_dataset_size: Optional[int] = None,
+                 positive_negative_ratio: float = 1.0,
+                 # Initialization strategy parameters
+                 progressive_init: bool = True,
+                 centroid_adjustment_percentage: float = 0.1,
+                 # Loss function for SBERT finetuning
+                 loss_function: str = 'cosine_similarity',
+                 # PCKMeans parameters
+                 n_clusters: int = 100,
+                 w_cl: float = 0.5,
+                 seed: int = 42):
+        """
+        Initialize the EM-style training framework
+
+        Args:
+            base_model_name: Name of the base SBERT model to use
+            max_iterations: Maximum number of EM iterations
+            positive_threshold: Similarity threshold for positive examples
+            negative_threshold: Similarity threshold for negative examples
+            batch_size: Batch size for SBERT fine-tuning
+            epochs_per_iteration: Number of epochs per EM iteration
+            warmup_steps: Warmup steps for SBERT fine-tuning
+            learning_rate: Learning rate for SBERT fine-tuning
+            save_dir: Directory to save results
+            max_example_memory: Maximum number of examples to keep in memory
+            memory_decay_factor: Factor to control decay of old examples (0.0 = no decay, 1.0 = full decay)
+            max_anchors: Maximum number of anchor points for similarity dataset generation
+            max_comparisons_per_anchor: Maximum number of comparisons per anchor point
+            target_dataset_size: Target size for similarity dataset (if None, use natural size)
+            positive_negative_ratio: Target ratio of positive to negative examples
+            progressive_init: Whether to use progressive initialization strategy
+            loss_function: Loss function for SBERT fine-tuning ('cosine_similarity', 'triplet', or 'multiple_negatives')
+            centroid_adjustment_percentage: Percentage of closest points to use for centroid adjustment
+            n_clusters: Number of clusters for PCKMeans
+            w_cl: Weight for cannot-link constraints
+        """
+        self.base_model_name = base_model_name
+        self.max_iterations = max_iterations
+        self.positive_threshold = positive_threshold
+        self.negative_threshold = negative_threshold
+        self.batch_size = batch_size
+        self.epochs_per_iteration = epochs_per_iteration
+        self.warmup_steps = warmup_steps
+        self.learning_rate = learning_rate
+        self.save_dir = save_dir
+
+        # Example memory parameters
+        self.max_example_memory = max_example_memory
+        self.memory_decay_factor = memory_decay_factor
+
+        # Dataset generation parameters
+        self.max_anchors = max_anchors
+        self.max_comparisons_per_anchor = max_comparisons_per_anchor
+        self.target_dataset_size = target_dataset_size
+        self.positive_negative_ratio = positive_negative_ratio
+
+        # Initialization strategy parameters
+        self.progressive_init = progressive_init
+        self.centroid_adjustment_percentage = centroid_adjustment_percentage
+
+        # Loss function
+        self.loss_function = loss_function
+
+        # PCKMeans parameters
+        self.n_clusters = n_clusters
+        self.w_cl = w_cl
+
+        # Random seed
+        self.seed = seed
+
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.random.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # Initialize SBERT model
+        self.sbert_model = SentenceTransformer(base_model_name)
+        self.sbert_model.to(self.device)
+
+        # Create save directory if it doesn't exist
+        os.makedirs(save_dir, exist_ok=True)
+
+        # Initialize example memory
+        self.example_memory = {
+            'positive_pairs': set(),
+            'negative_pairs': set()
+        }
+
+        # Initialize metrics tracking
+        self.metrics = {
+            'iterations': [],
+            'constraint_violations': [],
+            'inertia': [],
+            'positive_examples': [],
+            'negative_examples': []
+        }
+
+    @staticmethod
+    def _compute_similarity(embeddings: np.ndarray,
+                            idx_i: int,
+                            idx_j: int) -> float:
+        """
+        Compute cosine similarity between two embeddings
+
+        Args:
+            embeddings: Embedding matrix
+            idx_i: Index of first embedding
+            idx_j: Index of second embedding
+
+        Returns:
+            Cosine similarity between embeddings
+        """
+        emb_i = embeddings[idx_i]
+        emb_j = embeddings[idx_j]
+
+        # Ensure embeddings are normalized
+        norm_i = np.linalg.norm(emb_i)
+        norm_j = np.linalg.norm(emb_j)
+
+        if norm_i == 0 or norm_j == 0:
+            return 0.0
+
+        return np.dot(emb_i, emb_j) / (norm_i * norm_j)
+
+    def generate_training_examples(self,
+                                   data: Dict,
+                                   model: ConstrainedKMeans,
+                                   embeddings: Optional[np.ndarray] = None) -> Dict:
+        """
+        Generate training examples for SBERT fine-tuning based on clustering results
+
+        For each anchor example, we generate:
+        1. Positive examples:
+           - one from the same cluster, similar but no constraint violations
+           - one from a different cluster, similar but no constraint violations
+        2. Negative examples:
+           - one from the same cluster that violates a constraint
+           - one from a different cluster (dissimilar)
+
+        Args:
+            data: Dictionary containing original embeddings and constraints
+            model: Fitted ConstrainedKMeans model
+            embeddings: Updated embeddings (if None, use data['embs'])
+
+        Returns:
+            Dictionary containing positive and negative pairs
+        """
+        # Use updated embeddings if provided
+        if embeddings is None:
+            embeddings = data['embs']
+
+        labels = model.labels_
+
+        # Store examples
+        positive_same_cluster = []
+        positive_diff_cluster = []
+        negative_same_cluster = []
+        negative_diff_cluster = []
+
+        # Sample a subset of points to use as anchors
+        sample_size = min(self.max_anchors, len(embeddings))
+        anchor_indices = random.sample(range(len(embeddings)), sample_size)
+
+        print("Generating training examples for each anchor point...")
+        for anchor_idx in tqdm(anchor_indices):
+            anchor_cluster = labels[anchor_idx]
+
+            # Get all points in the same cluster
+            same_cluster_indices = np.where(labels == anchor_cluster)[0]
+            same_cluster_indices = [idx for idx in same_cluster_indices if idx != anchor_idx]
+
+            # Skip if no points in same cluster
+            if len(same_cluster_indices) == 0:
+                continue
+
+            # Get all points in different clusters
+            diff_cluster_indices = np.where(labels != anchor_cluster)[0]
+
+            # Skip if no points in different clusters
+            if len(diff_cluster_indices) == 0:
+                continue
+
+            # Simultaneously process #1 and #3: Find positive examples (no constraints) and negative examples (with constraints)
+            # from the same cluster in a single pass
+
+            # Get the constraints for the anchor point
+            anchor_constraints = self.constraint_graph.get(anchor_idx, set())
+
+            # Divide same-cluster points into those with and without constraints
+            constrained_same_cluster = []
+            unconstrained_same_cluster = []
+
+            for idx in same_cluster_indices:
+                if idx in anchor_constraints:
+                    constrained_same_cluster.append(idx)
+                else:
+                    unconstrained_same_cluster.append(idx)
+
+            # Calculate similarities for all points in same cluster at once
+            if unconstrained_same_cluster:
+                # Process positive examples (unconstrained points)
+                sims_unconstrained = np.array([
+                    self._compute_similarity(embeddings, anchor_idx, j)
+                    for j in unconstrained_same_cluster
+                ])
+
+                if len(sims_unconstrained) > 0:
+                    # Find most similar unconstrained point
+                    most_similar_idx = np.argmax(sims_unconstrained)
+                    pos_same_idx = unconstrained_same_cluster[most_similar_idx]
+                    sim_pos_same = sims_unconstrained[most_similar_idx]
+
+                    # Only add if similarity is above threshold
+                    if sim_pos_same > self.positive_threshold:
+                        positive_same_cluster.append((int(anchor_idx), int(pos_same_idx)))
+
+            if constrained_same_cluster:
+                # Process negative examples (constrained points)
+                sims_constrained = np.array([
+                    self._compute_similarity(embeddings, anchor_idx, j)
+                    for j in constrained_same_cluster
+                ])
+
+                if len(sims_constrained) > 0:
+                    # Find most similar constrained point
+                    most_similar_constrained_idx = np.argmax(sims_constrained)
+                    neg_same_idx = constrained_same_cluster[most_similar_constrained_idx]
+                    sim_neg_same = sims_constrained[most_similar_constrained_idx]
+
+                    # Only add if similarity is above threshold
+                    if sim_neg_same > self.negative_threshold:
+                        negative_same_cluster.append((int(anchor_idx), int(neg_same_idx)))
+
+            # 2. Find positive example from a different cluster (similar but no constraints)
+            # Sample points from different clusters for efficiency
+            sample_size_diff = min(self.max_comparisons_per_anchor, len(diff_cluster_indices))
+            sampled_diff = random.sample(list(diff_cluster_indices), sample_size_diff)
+
+            # Calculate similarities
+            sims_diff_cluster = np.array([
+                self._compute_similarity(embeddings, anchor_idx, j)
+                for j in sampled_diff
+            ])
+
+            # Filter out points with constraint violations
+            valid_diff_indices = []
+            for i, idx in enumerate(sampled_diff):
+                if idx in self.constraint_graph.get(anchor_idx, set()):
+                    continue  # Skip if there's a constraint
+                valid_diff_indices.append(i)
+
+            if valid_diff_indices:
+                # Find most similar valid point from different cluster
+                valid_diff_sims = sims_diff_cluster[valid_diff_indices]
+                most_similar_diff_idx = valid_diff_indices[np.argmax(valid_diff_sims)]
+                pos_diff_idx = sampled_diff[most_similar_diff_idx]
+                sim_pos_diff = sims_diff_cluster[most_similar_diff_idx]
+
+                # Only add if similarity is above threshold
+                if sim_pos_diff > self.positive_threshold * 0.9:  # Slightly lower threshold
+                    positive_diff_cluster.append((int(anchor_idx), int(pos_diff_idx)))
+
+            # 4. Find negative example from a different cluster (can be any)
+            # Use already sampled points from different clusters
+            if sampled_diff:
+                # Find most dissimilar point from different cluster
+                least_similar_diff_idx = np.argmin(sims_diff_cluster)
+                neg_diff_idx = sampled_diff[least_similar_diff_idx]
+
+                # Add as negative example
+                negative_diff_cluster.append((int(anchor_idx), int(neg_diff_idx)))
+
+        # Combine all positive and negative pairs
+        positive_pairs = positive_same_cluster + positive_diff_cluster
+        negative_pairs = negative_same_cluster + negative_diff_cluster
+
+        # If target dataset size is specified, sample to achieve target size
+        if self.target_dataset_size is not None:
+            # Calculate target sizes for positive and negative based on ratio
+            total_samples = min(self.target_dataset_size, len(positive_pairs) + len(negative_pairs))
+            target_positive = int(total_samples * self.positive_negative_ratio / (1.0 + self.positive_negative_ratio))
+            target_negative = total_samples - target_positive
+
+            # Sample positive and negative pairs
+            if len(positive_pairs) > target_positive:
+                positive_pairs = random.sample(positive_pairs, target_positive)
+            if len(negative_pairs) > target_negative:
+                negative_pairs = random.sample(negative_pairs, target_negative)
+
+        print(f"Generated {len(positive_same_cluster)} positive same-cluster pairs")
+        print(f"Generated {len(positive_diff_cluster)} positive different-cluster pairs")
+        print(f"Generated {len(negative_same_cluster)} negative same-cluster pairs (constraint violations)")
+        print(f"Generated {len(negative_diff_cluster)} negative different-cluster pairs")
+        print(f"Final dataset: {len(positive_pairs)} positive, {len(negative_pairs)} negative")
+
+        return {
+            'positive_pairs': positive_pairs,
+            'negative_pairs': negative_pairs
+        }
+
+    def update_example_memory(self, new_examples: Dict[str, List[Tuple[int, int]]]) -> Dict[str, List[Tuple[int, int]]]:
+        """
+        Update example memory with new examples
+
+        Args:
+            new_examples: Dictionary containing new positive and negative pairs
+
+        Returns:
+            Updated example memory
+        """
+        # Apply memory decay if configured
+        if self.memory_decay_factor > 0:
+            # Reduce the weight of old examples
+            current_positive = list(self.example_memory['positive_pairs'])
+            current_negative = list(self.example_memory['negative_pairs'])
+
+            # Keep only a fraction of old examples based on decay factor
+            keep_count_positive = int(len(current_positive) * (1.0 - self.memory_decay_factor))
+            keep_count_negative = int(len(current_negative) * (1.0 - self.memory_decay_factor))
+
+            # Keep the most recent examples
+            old_positive = set(current_positive[-keep_count_positive:]) if keep_count_positive > 0 else set()
+            old_negative = set(current_negative[-keep_count_negative:]) if keep_count_negative > 0 else set()
+        else:
+            # Keep all old examples (up to max_memory/2)
+            old_positive = set(list(self.example_memory['positive_pairs'])[-self.max_example_memory // 2:])
+            old_negative = set(list(self.example_memory['negative_pairs'])[-self.max_example_memory // 2:])
+
+        # Update with new examples
+        self.example_memory['positive_pairs'] = old_positive | set(new_examples['positive_pairs'])
+        self.example_memory['negative_pairs'] = old_negative | set(new_examples['negative_pairs'])
+
+        # Ensure we don't exceed max_memory by keeping most recent examples
+        if len(self.example_memory['positive_pairs']) > self.max_example_memory // 2:
+            self.example_memory['positive_pairs'] = set(
+                list(self.example_memory['positive_pairs'])[-self.max_example_memory // 2:]
+            )
+
+        if len(self.example_memory['negative_pairs']) > self.max_example_memory // 2:
+            self.example_memory['negative_pairs'] = set(
+                list(self.example_memory['negative_pairs'])[-self.max_example_memory // 2:]
+            )
+
+        # Convert to dictionary of lists
+        return {
+            'positive_pairs': list(self.example_memory['positive_pairs']),
+            'negative_pairs': list(self.example_memory['negative_pairs'])
+        }
+
+    @staticmethod
+    def adjust_centroids(previous_centroids: np.ndarray,
+                         old_embeddings: np.ndarray,
+                         new_embeddings: np.ndarray,
+                         percentage: float = 0.1) -> np.ndarray:
+        """
+        Adjust centroids based on change in embedding space
+
+        Args:
+            previous_centroids: Previous cluster centroids
+            old_embeddings: Previous embeddings
+            new_embeddings: Updated embeddings
+            percentage: Percentage of closest points to use (default: 10%)
+
+        Returns:
+            Adjusted centroids
+        """
+        adjusted_centroids = []
+
+        # Calculate number of points to use (at least 3, at most 100)
+        num_points = max(3, min(100, int(len(old_embeddings) * percentage)))
+        print(f"Using {num_points} closest points ({percentage * 100:.1f}% of data) to adjust centroids")
+
+        for centroid in previous_centroids:
+            # Find closest points to this centroid in old space
+            distances = np.sum((old_embeddings - centroid) ** 2, axis=1)
+            closest_indices = np.argsort(distances)[:num_points]  # Top n% closest points
+
+            # Find where these points are in the new space and compute new centroid
+            new_position = np.mean(new_embeddings[closest_indices], axis=0)
+            adjusted_centroids.append(new_position)
+
+        return np.array(adjusted_centroids)
+
+    def hybrid_initialization(self,
+                              model: ConstrainedKMeans,
+                              new_embeddings: np.ndarray,
+                              constraints: List[Tuple[int, int]],
+                              reinit_fraction: float = 0.3) -> np.ndarray:
+        """
+        Reinitialize worst-performing centroids while keeping others
+
+        Args:
+            model: Previous ConstrainedKMeans model
+            new_embeddings: Updated embeddings
+            constraints: Cannot-link constraints
+            reinit_fraction: Fraction of centroids to reinitialize
+
+        Returns:
+            Updated centroids
+        """
+        # Keep track of which clusters have the most constraint violations
+        cluster_violations = {}
+        for i, j in model.persistent_violations:
+            c1, c2 = model.labels_[i], model.labels_[j]
+            cluster_violations[c1] = cluster_violations.get(c1, 0) + 1
+            cluster_violations[c2] = cluster_violations.get(c2, 0) + 1
+
+        # Sort clusters by violation count
+        sorted_clusters = sorted(cluster_violations.items(),
+                                 key=lambda x: x[1], reverse=True)
+
+        # Determine which centroids to reinitialize
+        n_reinit = max(1, int(reinit_fraction * model.n_clusters))
+        clusters_to_reinit = [c for c, _ in sorted_clusters[:n_reinit]]
+
+        # If no violations, reinitialize random centroids
+        if not clusters_to_reinit:
+            clusters_to_reinit = random.sample(range(model.n_clusters), n_reinit)
+
+        # Create new centroids list
+        new_centroids = model.cluster_centers_.copy()
+
+        # Reinitialize selected centroids
+        initializer = KMeansPlusPlusInit(
+            strategy=InitializationStrategy.CONSTRAINT_AWARE,
+            w_cl=model.w_cl
+        )
+        reinit_centroids = initializer.initialize(
+            new_embeddings, n_reinit, constraints, random_state=42
+        )
+
+        for i, cluster_id in enumerate(clusters_to_reinit):
+            new_centroids[cluster_id] = reinit_centroids[i]
+
+        return new_centroids
+
+    def finetune_sbert(self,
+                       examples: Dict[str, List[Tuple[int, int]]],
+                       sentences: List[str]) -> None:
+        """
+        Fine-tune SBERT using modern SentenceTransformerTrainer approach
+
+        Args:
+            examples: Dictionary containing positive and negative pairs
+            sentences: Original sentences
+        """
+
+        # Prepare the datasets in the format expected by the Trainer
+        positive_pairs = examples['positive_pairs']
+        negative_pairs = examples['negative_pairs']
+
+        print(f"Creating {len(positive_pairs)} positive and {len(negative_pairs)} negative training examples")
+
+        # Create a dataset in HuggingFace datasets format
+        train_data = []
+
+        # Add positive pairs
+        for i, j in positive_pairs:
+            train_data.append({
+                'text_1': sentences[i],
+                'text_2': sentences[j],
+                'label': 1.0
+            })
+
+        # Add negative pairs
+        for i, j in negative_pairs:
+            train_data.append({
+                'text_1': sentences[i],
+                'text_2': sentences[j],
+                'label': 0.0
+            })
+
+        # Create the Dataset object
+        train_dataset = Dataset.from_list(train_data)
+
+        # For evaluation, hold out 10% of data
+        train_eval = train_dataset.train_test_split(test_size=0.1)
+        train_dataset = train_eval['train']
+        eval_dataset = train_eval['test']
+
+        print(f"Train dataset: {len(train_dataset)} examples")
+        print(f"Eval dataset: {len(eval_dataset)} examples")
+
+        # Define loss function based on configuration
+        if self.loss_function == 'cosine_similarity':
+            loss = CosineSimilarityLoss
+        elif self.loss_function == 'triplet':
+            loss = TripletLoss
+        elif self.loss_function == 'multiple_negatives':
+            loss = MultipleNegativesRankingLoss
+        else:
+            # Default to cosine similarity loss
+            print(f"Warning: Unknown loss function '{self.loss_function}'. Using CosineSimilarityLoss instead.")
+            loss = CosineSimilarityLoss
+
+        # Define training arguments
+        output_dir = os.path.join(self.save_dir, "sbert_checkpoints")
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Configure training arguments
+        training_args = SentenceTransformerTrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=self.epochs_per_iteration,
+            per_device_train_batch_size=self.batch_size,
+            per_device_eval_batch_size=self.batch_size,
+            warmup_steps=self.warmup_steps,
+            weight_decay=0.01,
+            logging_dir=os.path.join(output_dir, "logs"),
+            logging_steps=100,
+            greater_is_better=False,
+            learning_rate=self.learning_rate
+        )
+
+        # Create the trainer
+        trainer = SentenceTransformerTrainer(
+            model=self.sbert_model,
+            args=training_args,
+            train_dataset=train_dataset,
+            loss=loss,
+        )
+
+        # Train the model
+        print(f"Fine-tuning SBERT for {self.epochs_per_iteration} epochs...")
+        trainer.train()
+
+        print("Fine-tuning complete")
+
+    def train(self,
+              data: Dict,
+              kmeans_params: Dict = None,
+              existing_metrics: List[Dict] = None) -> Dict:
+        """
+        Run the EM-style training framework
+
+        Args:
+            data: Dictionary containing 'embs', 'constraints', and 'sentences'
+            n_clusters: Number of clusters
+            w_cl: Weight for cannot-link constraints
+            kmeans_params: Additional parameters for KMeans
+            existing_metrics: Existing metrics to continue tracking
+
+        Returns:
+            Dictionary containing final model, SBERT model, and metrics
+        """
+        # Set default KMeans parameters
+        if kmeans_params is None:
+            kmeans_params = {
+                'max_iter': 100,
+                'tol': 1e-4,
+                'early_stopping_tol': 10,
+                'random_state': 42
+            }
+
+        # Initialize embeddings and constraints
+        embeddings = data['embs'].copy()
+        constraints = data['constraints']
+        sentences = data['chains']
+
+        # Initialize metrics
+        iteration_metrics = [] if existing_metrics is None else existing_metrics.copy()
+
+        # Initialize models
+        previous_pckmeans_model = None
+        previous_embeddings = None
+
+        # Main EM loop
+        for iteration in range(self.max_iterations):
+            print(f"\n=== EM Iteration {iteration + 1}/{self.max_iterations} ===\n")
+
+            # Determine initialization strategy
+            if self.progressive_init:
+                if iteration < 2:
+                    # Complete reinitialization
+                    initialization_strategy = "from_scratch"
+                elif iteration < self.max_iterations - 2:
+                    # Hybrid approach
+                    initialization_strategy = "hybrid"
+                else:
+                    # Warm start with adjustments
+                    initialization_strategy = "warm_start"
+            else:
+                # Always use from_scratch strategy
+                initialization_strategy = "from_scratch"
+
+            print(f"Using initialization strategy: {initialization_strategy}")
+
+            # Create initializer
+            initializer = KMeansPlusPlusInit(
+                strategy=InitializationStrategy.CONSTRAINT_AWARE,
+                w_cl=self.w_cl
+            )
+
+            # Apply the appropriate initialization strategy
+            init_centroids = None
+
+            if initialization_strategy == "from_scratch" or iteration == 0:
+                # Standard initialization from scratch
+                init_centroids = None  # Let the model handle initialization
+            elif initialization_strategy == "hybrid" and previous_pckmeans_model is not None:
+                # Hybrid reinitialization
+                init_centroids = self.hybrid_initialization(
+                    previous_pckmeans_model, embeddings, constraints, reinit_fraction=0.3
+                )
+            elif previous_pckmeans_model is not None and previous_embeddings is not None:
+                # Warm start with adjustments
+                init_centroids = self.adjust_centroids(
+                    previous_pckmeans_model.cluster_centers_, previous_embeddings, embeddings,
+                    percentage=self.centroid_adjustment_percentage
+                )
+
+            # Create KMeans model
+            pckmeans_model = ConstrainedKMeans(
+                n_clusters=self.n_clusters,
+                initializer=initializer,
+                w_cl=self.w_cl,
+                **kmeans_params
+            )
+
+            # Run clustering
+            print("Running constrained KMeans clustering...")
+
+            # Set initial centroids if we have them
+            if init_centroids is not None:
+                pckmeans_model.cluster_centers_ = init_centroids
+                # Fit with custom initialization
+                pckmeans_model.fit(embeddings, constraints, skip_init=True)
+            else:
+                # Regular fit
+                pckmeans_model.fit(embeddings, constraints, skip_init=False)
+
+            # Get clustering metrics
+            final_metrics = pckmeans_model.history_[-1]
+            print(f"Inertia: {final_metrics.inertia:.2f}, "
+                  f"Constraint violations: {final_metrics.constraint_violations}")
+
+            # Generate training examples
+            print("Generating training examples...")
+            new_examples = self.generate_training_examples(
+                data, pckmeans_model, embeddings
+            )
+
+            print(f"Generated {len(new_examples['positive_pairs'])} positive pairs and "
+                  f"{len(new_examples['negative_pairs'])} negative pairs")
+
+            # Update example memory
+            examples = self.update_example_memory(new_examples)
+            print(f"Example memory has {len(examples['positive_pairs'])} positive pairs and "
+                  f"{len(examples['negative_pairs'])} negative pairs")
+
+            # Check if we have enough examples
+            if len(examples['positive_pairs']) < 10 or len(examples['negative_pairs']) < 10:
+                print("Warning: Not enough training examples generated. Trying with looser thresholds.")
+                # Try with looser thresholds
+                temp_pos_threshold = self.positive_threshold * 0.9
+                temp_neg_threshold = self.negative_threshold * 0.9
+
+                # Update thresholds temporarily
+                self.positive_threshold = temp_pos_threshold
+                self.negative_threshold = temp_neg_threshold
+
+                # Try again
+                new_examples = self.generate_training_examples(
+                    data, pckmeans_model, embeddings
+                )
+                examples = self.update_example_memory(new_examples)
+
+                # Restore original thresholds
+                self.positive_threshold = self.positive_threshold / 0.9
+                self.negative_threshold = self.negative_threshold / 0.9
+
+                print(f"With looser thresholds, generated {len(examples['positive_pairs'])} positive pairs and "
+                      f"{len(examples['negative_pairs'])} negative pairs")
+
+                # If still not enough, consider stopping
+                if len(examples['positive_pairs']) < 10 or len(examples['negative_pairs']) < 10:
+                    print("Warning: Still not enough examples. Continuing with what we have.")
+                    if iteration > 0:
+                        break
+
+
+
+            print("Fine-tuning SBERT...")
+            self.finetune_sbert(examples, sentences)
+
+            # Update embeddings
+            print("Updating embeddings...")
+            previous_embeddings = embeddings.copy()
+            embeddings = self.sbert_model.encode(
+                sentences, batch_size=32, show_progress_bar=True, normalize_embeddings=True
+            )
+
+            # Save iteration metrics
+            iteration_metrics.append({
+                'iteration': iteration + 1,
+                'inertia': final_metrics.inertia,
+                'constraint_violations': final_metrics.constraint_violations,
+                'positive_examples': len(examples['positive_pairs']),
+                'negative_examples': len(examples['negative_pairs'])
+            })
+
+            # Update previous model
+            previous_pckmeans_model = pckmeans_model
+
+
+        return {
+            'final_model': pckmeans_model,
+            'sbert_model': self.sbert_model,
+            'updated_embeddings': embeddings,
+            'metrics': iteration_metrics
+        }
+
+    def save(self, config, pckmeans_model, embs):
+        """Save the model to a file."""
+
+        print("Saving clustering results...", flush=True)
+
+        output = {
+            "number_cluster": self.n_clusters,
+            "w_cl": self.w_cl,
+            "cluster_centers": pckmeans_model.cluster_centers_,
+            "labels": pckmeans_model.labels_,
+            "updated_embeddings": embs,
+            "violations": pckmeans_model.get_violation_statistics()
+        }
+
+        with open(config["clusters_path"] + f"em_clusters_{self.n_clusters}_{self.w_cl}.pickle", 'wb') as f:
+            pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='PCKmeans Clustering')
+    parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
+    parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
+    parser.add_argument('-i', metavar='MAX_ITER', default=100, type=int, help='maximum number of iterations')
+    parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
+
+    args = parser.parse_args()
+    config = ConfigFactory.parse_file('./config.conf')[args.c]
+
+    print("N_CLUSTERS: " + str(args.k), flush=True)
+    print("W_CL: " + str(args.w), flush=True)
+
+    print("Loading data for clustering...", flush=True)
+
+    # Load data
+    with open(config["cluster_embs_path"], 'rb') as f:
+        data = pickle.load(f)
+
+    framework = SBERTConstrainedClusteringTrainer(n_clusters=args.k,
+                                                  w_cl=args.w)
+
+    pckmeans_model, sbert_model, embs, metrics = framework.train(data)
+
+    framework.save(config, pckmeans_model, embs)

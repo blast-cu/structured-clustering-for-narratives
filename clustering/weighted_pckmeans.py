@@ -224,23 +224,31 @@ class ConstrainedKMeans:
 
     def fit(self,
             X: npt.NDArray[np.float64],
-            cl_constraints: List[Tuple[int, int]]) -> 'ConstrainedKMeans':
+            cl_constraints: List[Tuple[int, int]],
+            skip_init: bool = False) -> 'ConstrainedKMeans':
         """
         Fit the Constrained KMeans clustering model
 
         Args:
             X: Training data
             cl_constraints: Cannot-link constraints
+            skip_init: If True, use existing cluster centers for initialization
 
         Returns:
             self: Fitted model
         """
 
         # Initialize centers
-        print("Initializing cluster centers...", flush=True)
-        self.cluster_centers_ = self.initializer.initialize(
-            X, self.n_clusters, cl_constraints, self.random_state
-        )
+
+        if skip_init:
+            # Ensure cluster_centers_ has already been set
+            if self.cluster_centers_ is None:
+                raise ValueError("Custom initialization requires cluster_centers_ to be set")
+        else:
+            print("Initializing cluster centers...", flush=True)
+            self.cluster_centers_ = self.initializer.initialize(
+                X, self.n_clusters, cl_constraints, self.random_state
+            )
 
         # Initialize tracking variables
         self.violation_counts = {}
@@ -250,11 +258,11 @@ class ConstrainedKMeans:
         if self.w_cl > 0:
             # Process constraints only once
             print("Building constraint graph...", flush=True)
-            constraint_graph, sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
+            self.constraint_graph, self.sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
         else:
             # Empty placeholders when w_cl = 0
-            constraint_graph = {}
-            sorted_constraints = []
+            self.constraint_graph = {}
+            self.sorted_constraints = []
 
         # Initialize history and tracking variables
         self.history_ = []
@@ -266,13 +274,13 @@ class ConstrainedKMeans:
         # Main clustering loop
         for iteration in tqdm(range(self.max_iter)):
             # Get new assignments
-            new_assignments = self._assign_points(X, constraint_graph)
+            new_assignments = self._assign_points(X, self.constraint_graph)
             
             # Update centers
             new_centers = self._update_centers(X, new_assignments)
             
             # Compute metrics
-            metrics = self._compute_metrics(X, new_assignments, constraint_graph, sorted_constraints)
+            metrics = self._compute_metrics(X, new_assignments, self.constraint_graph, self.sorted_constraints)
             self.history_.append(metrics)
             
             # Update violation statistics only if needed
@@ -308,7 +316,6 @@ class ConstrainedKMeans:
 
         self.n_iter_ = iteration + 1
 
-        # Convert the persistent violations to a list format expected by the API
         if self.w_cl > 0 and hasattr(self, 'potential_persistent_violations'):
             self.persistent_violations = [tuple(sorted(v)) for v in self.potential_persistent_violations]
         else:
