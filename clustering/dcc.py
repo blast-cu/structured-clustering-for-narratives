@@ -2,6 +2,7 @@ import argparse
 import collections
 import math
 import pickle
+import random
 from typing import List, Tuple
 
 import numpy as np
@@ -11,6 +12,7 @@ from pyhocon import ConfigFactory
 from sklearn.cluster import KMeans
 from torch import optim
 from torch.nn import Parameter
+from tqdm import tqdm
 
 
 class MSELoss(nn.Module):
@@ -35,9 +37,22 @@ def build_network(layers, activation="relu", dropout=0):
 
 
 class DCC(nn.Module):
-    def __init__(self, input_dim=784, z_dim=10, n_clusters=10,
+    def __init__(self, config, input_dim=784, z_dim=10, n_clusters=10,
                  encodeLayer=[400], decodeLayer=[400], activation="relu", dropout=0, alpha=1., gamma=0.1):
         super(self.__class__, self).__init__()
+        
+        self.config = config
+
+        seed = self.config["seed"]
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.random.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
         self.z_dim = z_dim
         self.layers = [input_dim] + encodeLayer + [z_dim]
         self.activation = activation
@@ -152,11 +167,13 @@ class DCC(nn.Module):
         use_cuda = torch.cuda.is_available()
         if use_cuda:
             self.cuda()
+
+        X = X.to(self.device)
         print("=====Training DCC=======", flush=True)
         optimizer = optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=lr)
 
         if use_kmeans:
-            print("Initializing cluster centers with kmeans.", flush=True)
+            print("Initializing cluster centers with kmeans...", flush=True)
             kmeans = KMeans(self.n_clusters, n_init=20)
             data = self.encode_batch(X)
             y_pred = kmeans.fit_predict(data.data.cpu().numpy())
@@ -164,7 +181,7 @@ class DCC(nn.Module):
             self.mu.data.copy_(torch.Tensor(kmeans.cluster_centers_))
         else:
             # use kmeans to randomly initialize cluster ceters
-            print("Randomly initializing cluster centers.", flush=True)
+            print("Randomly initializing cluster centers...", flush=True)
             kmeans = KMeans(self.n_clusters, n_init=1, max_iter=1)
             data = self.encode_batch(X)
             y_pred = kmeans.fit_predict(data.data.cpu().numpy())
@@ -178,7 +195,7 @@ class DCC(nn.Module):
         cl_num = cl_ind1.shape[0]
 
         update_cl = 1
-
+        
         for epoch in range(num_epochs):
             if epoch % update_interval == 0:
                 # update the targe distribution p
@@ -202,7 +219,8 @@ class DCC(nn.Module):
             recon_loss_val = 0.0
             cluster_loss_val = 0.0
 
-            for batch_idx in range(num_batch):
+            print("Computing Clustering and Reconstruction Loss...", flush=True)
+            for batch_idx in tqdm(range(num_batch)):
                 inputs = X[batch_idx * batch_size: min((batch_idx + 1) * batch_size, num)]
                 target = p[batch_idx * batch_size: min((batch_idx + 1) * batch_size, num)]
                 optimizer.zero_grad()
@@ -224,9 +242,10 @@ class DCC(nn.Module):
                 epoch + 1, train_loss / num, cluster_loss_val / num, recon_loss_val / num), flush=True)
 
             # train 1 epoch for pairwise cannot link constraint loss
+            print("Computing Pairwise Loss...", flush=True)
             cl_loss = 0.0
-            if epoch % update_cl == 0:
-                for cl_batch_idx in range(cl_num_batch):
+            if epoch % update_cl == 0 and cl_penalty > 0:
+                for cl_batch_idx in tqdm(range(cl_num_batch)):
                     inputs1 = X[cl_ind1[cl_batch_idx * batch_size: min(cl_num, (cl_batch_idx + 1) * batch_size)]]
                     inputs2 = X[cl_ind2[cl_batch_idx * batch_size: min(cl_num, (cl_batch_idx + 1) * batch_size)]]
                     optimizer.zero_grad()
@@ -237,7 +256,8 @@ class DCC(nn.Module):
                     loss.backward()
                     optimizer.step()
 
-            print("CL loss:", float(cl_loss.cpu()), flush=True)
+            if cl_penalty > 0:
+                print("CL loss:", float(cl_loss.cpu()), flush=True)
 
         return y_pred
 
@@ -249,7 +269,7 @@ class DCC(nn.Module):
         output = {
             "number_cluster": self.n_clusters,
             "w_cl": weight_pairwise,
-            "cluster_centers": self.mu,
+            "cluster_centers": self.mu.data.cpu().numpy(),
             "labels": y_pred
         }
 
@@ -291,8 +311,8 @@ if __name__ == '__main__':
     with open(config["cluster_embs_path"], 'rb') as f:
         data = pickle.load(f)
 
-    dcc = DCC(input_dim=784, z_dim=100, n_clusters=args.k, encodeLayer=[500, 500, 2000],
-              decodeLayer=[2000, 500, 500], activation="relu", dropout=0)
+    dcc = DCC(config, input_dim=384, z_dim=100, n_clusters=args.k, encodeLayer=[192],
+              decodeLayer=[192], activation="relu", dropout=0)
 
     X = torch.from_numpy(data['embs'])
     cl_ind1, cl_ind2 = DCC.get_constraint_pairs(data['constraints'])

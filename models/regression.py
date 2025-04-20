@@ -20,7 +20,7 @@ def create_dataset(num_clusters, constraint_weight):
     with open("./data/immigration/annotated_event_chains.pickle", 'rb') as f:
         annotated_event_chains = pickle.load(f)
 
-    with open(f"./data/immigration/clusters_{num_clusters}_{constraint_weight}.pickle", 'rb') as f:
+    with open(f"./data/immigration/dcc_clusters_{num_clusters}_{constraint_weight}.pickle", 'rb') as f:
         clusters = pickle.load(f)
 
     with open("./data/immigration/embeddings.pickle", 'rb') as f:

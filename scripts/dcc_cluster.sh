@@ -8,6 +8,7 @@
 #SBATCH --time=1-00:00:00
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
+#SBATCH --gres=gpu:1
 #SBATCH --mem=100G
 #SBATCH --job-name=cluster_chains
 #SBATCH --output=logs/data.%j.log
@@ -29,10 +30,12 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 # python3 ./clustering/weighted_pckmeans.py -c "immigration" -k $1 -w $2
 
-python3 ./clustering/dcc.py -c "immigration" -k 250 --weight_pairwise 0.01 --batch_size 32
+python3 ./clustering/dcc.py -c "immigration" -k 250 --weight_pairwise 0 --batch_size 256 --epochs 10
 
 # python3 ./clustering/kmeans.py -c "immigration" -k $1
 
 # Running regression
 
 # python3 ./models/regression.py -c "immigration" -k $1 -w $2 --save_results
+
+python3 ./models/regression.py -c "immigration" -k 250 -w 0 --save_results
