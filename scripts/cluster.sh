@@ -2,15 +2,16 @@
 
 #SBATCH --account=blanca-curc-gpu
 #SBATCH --mail-user=roda9210@colorado.edu
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=FAIL,END
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=8
-#SBATCH --time=1-00:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
-#SBATCH --mem=50G
+#SBATCH --gres=gpu:1
+#SBATCH --mem=70G
 #SBATCH --job-name=cluster_chains
-#SBATCH --output=logs/data.%j.log
+#SBATCH --output=logs/cluster.%j.log
 
 source ~/.bashrc
 
@@ -27,10 +28,12 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 # Clustering chains
 
-python3 ./clustering/weighted_pckmeans.py -c "immigration" -k $1 -w $2
+# python3 ./clustering/weighted_pckmeans.py -c "immigration" -k $1 -w $2
+
+python3 ./clustering/finetuned_pckmeans.py -c "immigration" -k 250 -w 1
 
 # python3 ./clustering/kmeans.py -c "immigration" -k $1
 
 # Running regression
 
-python3 ./models/regression.py -c "immigration" -k $1 -w $2 --save_results
+# python3 ./models/regression.py -c "immigration" -k $1 -w $2 --save_results

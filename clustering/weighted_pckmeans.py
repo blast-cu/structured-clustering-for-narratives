@@ -33,7 +33,9 @@ class ConstrainedKMeans:
                  max_iter: int = 100,
                  tol: float = 1e-4,
                  early_stopping_tol: int = 10,
-                 random_state: Optional[int] = None):
+                 random_state: Optional[int] = None,
+                 constraint_graph: Dict[int, Set[int]] = None,
+                 sorted_constraints: List[Tuple[int, int]] = None):
         """
         Initialize the Pairwise Constrained KMeans algorithm
 
@@ -54,6 +56,8 @@ class ConstrainedKMeans:
         self.tol = tol
         self.early_stopping_tol = early_stopping_tol
         self.random_state = random_state
+        self.constraint_graph = constraint_graph
+        self.sorted_constraints = sorted_constraints
 
         # Attributes that will be set during fitting
         self.cluster_centers_: Optional[npt.NDArray[np.float64]] = None
@@ -85,7 +89,7 @@ class ConstrainedKMeans:
         # Pre-sort constraints once to avoid repeated sorting
         sorted_constraints = []
         
-        for i, j in cl_constraints:
+        for i, j in tqdm(cl_constraints):
             # Ensure i < j ordering consistently
             if i > j:
                 sorted_constraints.append((int(j), int(i)))
@@ -258,7 +262,8 @@ class ConstrainedKMeans:
         if self.w_cl > 0:
             # Process constraints only once
             print("Building constraint graph...", flush=True)
-            self.constraint_graph, self.sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
+            if self.constraint_graph == None and self.sorted_constraints == None:
+                self.constraint_graph, self.sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
         else:
             # Empty placeholders when w_cl = 0
             self.constraint_graph = {}

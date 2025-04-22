@@ -24,11 +24,11 @@ class SBERTConstrainedClusteringTrainer:
 
     def __init__(self,
                  base_model_name: str = 'all-MiniLM-L6-v2',
-                 max_iterations: int = 5,
-                 positive_threshold: float = 0.75,
+                 max_iterations: int = 10,
+                 positive_threshold: float = 0.7,
                  negative_threshold: float = 0.5,
                  batch_size: int = 16,
-                 epochs_per_iteration: int = 3,
+                 epochs_per_iteration: int = 10,
                  warmup_steps: int = 100,
                  learning_rate: float = 2e-5,
                  save_dir: str = 'results',
@@ -36,8 +36,11 @@ class SBERTConstrainedClusteringTrainer:
                  max_example_memory: int = 5000,
                  memory_decay_factor: float = 0.0,
                  # Dataset generation parameters
-                 max_anchors: int = 1000,
-                 max_comparisons_per_anchor: int = 100,
+                 max_anchors: int = 10000,
+                 use_all_anchors: bool = False,
+                 sample_near_centroids: bool = False,
+                 centroid_distance_threshold: float = 0.5,
+                 max_comparisons_per_anchor: int = 1000,
                  target_dataset_size: Optional[int] = None,
                  positive_negative_ratio: float = 1.0,
                  # Initialization strategy parameters
@@ -90,7 +93,10 @@ class SBERTConstrainedClusteringTrainer:
 
         # Dataset generation parameters
         self.max_anchors = max_anchors
+        self.use_all_anchors = use_all_anchors
         self.max_comparisons_per_anchor = max_comparisons_per_anchor
+        self.sample_near_centroids = sample_near_centroids
+        self.centroid_distance_threshold = centroid_distance_threshold
         self.target_dataset_size = target_dataset_size
         self.positive_negative_ratio = positive_negative_ratio
 
@@ -166,181 +172,342 @@ class SBERTConstrainedClusteringTrainer:
 
         return np.dot(emb_i, emb_j) / (norm_i * norm_j)
 
-    def generate_training_examples(self,
-                                   data: Dict,
-                                   model: ConstrainedKMeans,
-                                   embeddings: Optional[np.ndarray] = None) -> Dict:
+    def generate_training_examples(self, 
+                                    data: Dict, 
+                                    model: 'ConstrainedKMeans',
+                                    embeddings: Optional[np.ndarray] = None) -> Dict:
+            """
+            Generate training examples for SBERT fine-tuning based on clustering results
+            
+            For each anchor example, we generate:
+            1. Positive examples: 
+            - one from the same cluster, similar but no constraint violations
+            - one from a different cluster, similar but no constraint violations
+            2. Negative examples:
+            - one from the same cluster that violates a constraint
+            - one from a different cluster (dissimilar)
+            
+            Args:
+                data: Dictionary containing original embeddings and constraints
+                model: Fitted ConstrainedKMeans model
+                embeddings: Updated embeddings (if None, use data['embs'])
+                
+            Returns:
+                Dictionary containing positive and negative pairs
+            """
+            # Use updated embeddings if provided
+            if embeddings is None:
+                embeddings = data['embs']
+            
+            labels = model.labels_
+            
+            # Use constraint structures from the class (set in train method)
+            constraint_points = self.constraint_graph
+            
+            # Store examples
+            positive_same_cluster = []
+            positive_diff_cluster = []
+            negative_same_cluster = []
+            negative_diff_cluster = []
+            
+            # Anchor selection strategy
+            if self.sample_near_centroids:
+                print("Sampling anchor points near cluster centroids...")
+                anchor_indices = self._sample_points_near_centroids(
+                    embeddings, 
+                    model.cluster_centers_, 
+                    labels,
+                    self.centroid_distance_threshold,
+                    # No maximum points per cluster - let the threshold determine the count
+                    max_points_per_cluster=None
+                )
+                print(f"Sampled {len(anchor_indices)} anchor points near centroids")
+            elif self.use_all_anchors:
+                print(f"Using all {len(embeddings)} data points as anchors...")
+                anchor_indices = list(range(len(embeddings)))
+            else:
+                # Sample a subset of points to use as anchors
+                sample_size = min(self.max_anchors, len(embeddings))
+                anchor_indices = random.sample(range(len(embeddings)), sample_size)
+                print(f"Sampled {len(anchor_indices)} random anchor points...")
+            
+            print("Generating training examples for each anchor point...")
+            for anchor_idx in tqdm(anchor_indices):
+                anchor_cluster = labels[anchor_idx]
+                
+                # Get all points in the same cluster
+                same_cluster_indices = np.where(labels == anchor_cluster)[0]
+                same_cluster_indices = [idx for idx in same_cluster_indices if idx != anchor_idx]
+                
+                # Skip if no points in same cluster
+                if len(same_cluster_indices) == 0:
+                    continue
+                
+                # Get all points in different clusters
+                diff_cluster_indices = np.where(labels != anchor_cluster)[0]
+                
+                # Skip if no points in different clusters
+                if len(diff_cluster_indices) == 0:
+                    continue
+                    
+                # Simultaneously process #1 and #3: Find positive examples (no constraints) and negative examples (with constraints) 
+                # from the same cluster in a single pass
+                
+                # Get the constraints for the anchor point
+                anchor_constraints = constraint_points.get(anchor_idx, set())
+                
+                # Divide same-cluster points into those with and without constraints
+                constrained_same_cluster = []
+                unconstrained_same_cluster = []
+                
+                for idx in same_cluster_indices:
+                    if idx in anchor_constraints:
+                        constrained_same_cluster.append(idx)
+                    else:
+                        unconstrained_same_cluster.append(idx)
+                
+                # Calculate similarities for all points in same cluster at once
+                if unconstrained_same_cluster:
+                    # Process positive examples (unconstrained points)
+                    sims_unconstrained = np.array([
+                        self._compute_similarity(embeddings, anchor_idx, j)
+                        for j in unconstrained_same_cluster
+                    ])
+                    
+                    if len(sims_unconstrained) > 0:
+                        # Find most similar unconstrained point
+                        most_similar_idx = np.argmax(sims_unconstrained)
+                        pos_same_idx = unconstrained_same_cluster[most_similar_idx]
+                        sim_pos_same = sims_unconstrained[most_similar_idx]
+                        
+                        # Only add if similarity is above threshold
+                        if sim_pos_same > self.positive_threshold:
+                            positive_same_cluster.append((int(anchor_idx), int(pos_same_idx)))
+                
+                if constrained_same_cluster:
+                    # Process negative examples (constrained points)
+                    sims_constrained = np.array([
+                        self._compute_similarity(embeddings, anchor_idx, j)
+                        for j in constrained_same_cluster
+                    ])
+                    
+                    if len(sims_constrained) > 0:
+                        # Find most similar constrained point
+                        most_similar_constrained_idx = np.argmax(sims_constrained)
+                        neg_same_idx = constrained_same_cluster[most_similar_constrained_idx]
+                        sim_neg_same = sims_constrained[most_similar_constrained_idx]
+                        
+                        # Only add if similarity is above threshold
+                        if sim_neg_same > self.negative_threshold:
+                            negative_same_cluster.append((int(anchor_idx), int(neg_same_idx)))
+                
+                # 2. Find positive example from a different cluster (similar but no constraints)
+                # Sample points from different clusters for efficiency
+                sample_size_diff = min(self.max_comparisons_per_anchor, len(diff_cluster_indices))
+                sampled_diff = random.sample(list(diff_cluster_indices), sample_size_diff)
+                
+                # Calculate similarities
+                sims_diff_cluster = np.array([
+                    self._compute_similarity(embeddings, anchor_idx, j)
+                    for j in sampled_diff
+                ])
+                
+                # Filter out points with constraint violations
+                valid_diff_indices = []
+                for i, idx in enumerate(sampled_diff):
+                    if idx in constraint_points.get(anchor_idx, set()):
+                        continue  # Skip if there's a constraint
+                    valid_diff_indices.append(i)
+                
+                if valid_diff_indices:
+                    # Find most similar valid point from different cluster
+                    valid_diff_sims = sims_diff_cluster[valid_diff_indices]
+                    most_similar_diff_idx = valid_diff_indices[np.argmax(valid_diff_sims)]
+                    pos_diff_idx = sampled_diff[most_similar_diff_idx]
+                    sim_pos_diff = sims_diff_cluster[most_similar_diff_idx]
+                    
+                    # Only add if similarity is above threshold
+                    if sim_pos_diff > self.positive_threshold * 0.9:  # Slightly lower threshold
+                        positive_diff_cluster.append((int(anchor_idx), int(pos_diff_idx)))
+                
+                # 4. Find negative example from a different cluster (can be any)
+                # Use already sampled points from different clusters
+                if sampled_diff:
+                    # Find most dissimilar point from different cluster
+                    least_similar_diff_idx = np.argmin(sims_diff_cluster)
+                    neg_diff_idx = sampled_diff[least_similar_diff_idx]
+                    
+                    # Add as negative example
+                    negative_diff_cluster.append((int(anchor_idx), int(neg_diff_idx)))
+            
+            # Combine all positive and negative pairs
+            positive_pairs = positive_same_cluster + positive_diff_cluster
+            negative_pairs = negative_same_cluster + negative_diff_cluster
+            
+            # Create a mapping from anchor to its positive and negative pairs
+            anchor_to_pairs = {}
+            for i, j in positive_pairs:
+                if i not in anchor_to_pairs:
+                    anchor_to_pairs[i] = {'positive': [], 'negative': []}
+                anchor_to_pairs[i]['positive'].append((i, j))
+            
+            for i, j in negative_pairs:
+                if i not in anchor_to_pairs:
+                    anchor_to_pairs[i] = {'positive': [], 'negative': []}
+                anchor_to_pairs[i]['negative'].append((i, j))
+            
+            # Apply ratio-based balancing either using target size or maintaining ratio
+            if self.target_dataset_size is not None:
+                # Calculate target sizes for positive and negative based on ratio
+                total_samples = min(self.target_dataset_size, len(positive_pairs) + len(negative_pairs))
+                target_positive = int(total_samples * self.positive_negative_ratio / (1.0 + self.positive_negative_ratio))
+                target_negative = total_samples - target_positive
+                
+                # Sample positive and negative pairs
+                if len(positive_pairs) > target_positive:
+                    positive_pairs = random.sample(positive_pairs, target_positive)
+                if len(negative_pairs) > target_negative:
+                    negative_pairs = random.sample(negative_pairs, target_negative)
+            else:
+                # No target size, but still maintain the ratio
+                actual_ratio = len(positive_pairs) / max(1, len(negative_pairs))
+                desired_ratio = self.positive_negative_ratio
+                
+                if actual_ratio < desired_ratio:
+                    # Too few positives compared to negatives - subsample negatives
+                    target_negative = int(len(positive_pairs) / desired_ratio)
+                    
+                    # Try to maintain pairs from same anchors when possible
+                    if len(anchor_to_pairs) > 0:
+                        # Prioritize anchors that have both positive and negative examples
+                        balanced_anchors = [anchor for anchor, pairs in anchor_to_pairs.items() 
+                                        if pairs['positive'] and pairs['negative']]
+                        
+                        # Start with all positive pairs
+                        sampled_positive = positive_pairs.copy()
+                        sampled_negative = []
+                        
+                        # First add one negative for each balanced anchor
+                        for anchor in balanced_anchors:
+                            if len(sampled_negative) < target_negative:
+                                neg_pair = random.choice(anchor_to_pairs[anchor]['negative'])
+                                sampled_negative.append(neg_pair)
+                        
+                        # Then randomly sample the rest
+                        remaining_negative = target_negative - len(sampled_negative)
+                        if remaining_negative > 0 and len(negative_pairs) > len(sampled_negative):
+                            remaining_candidates = [p for p in negative_pairs if p not in sampled_negative]
+                            sampled_negative.extend(random.sample(remaining_candidates, 
+                                                min(remaining_negative, len(remaining_candidates))))
+                        
+                        negative_pairs = sampled_negative
+                    else:
+                        # Fallback to random sampling if anchor mapping is empty
+                        negative_pairs = random.sample(negative_pairs, min(target_negative, len(negative_pairs)))
+                elif actual_ratio > desired_ratio:
+                    # Too many positives compared to negatives - subsample positives
+                    target_positive = int(len(negative_pairs) * desired_ratio)
+                    
+                    # Try to maintain pairs from same anchors when possible
+                    if len(anchor_to_pairs) > 0:
+                        # Prioritize anchors that have both positive and negative examples
+                        balanced_anchors = [anchor for anchor, pairs in anchor_to_pairs.items() 
+                                        if pairs['positive'] and pairs['negative']]
+                        
+                        # Start with all negative pairs
+                        sampled_negative = negative_pairs.copy()
+                        sampled_positive = []
+                        
+                        # First add one positive for each balanced anchor
+                        for anchor in balanced_anchors:
+                            if len(sampled_positive) < target_positive:
+                                pos_pair = random.choice(anchor_to_pairs[anchor]['positive'])
+                                sampled_positive.append(pos_pair)
+                        
+                        # Then randomly sample the rest
+                        remaining_positive = target_positive - len(sampled_positive)
+                        if remaining_positive > 0 and len(positive_pairs) > len(sampled_positive):
+                            remaining_candidates = [p for p in positive_pairs if p not in sampled_positive]
+                            sampled_positive.extend(random.sample(remaining_candidates, 
+                                                min(remaining_positive, len(remaining_candidates))))
+                        
+                        positive_pairs = sampled_positive
+                    else:
+                        # Fallback to random sampling if anchor mapping is empty
+                        positive_pairs = random.sample(positive_pairs, min(target_positive, len(positive_pairs)))
+            
+            print(f"Generated {len(positive_same_cluster)} positive same-cluster pairs")
+            print(f"Generated {len(positive_diff_cluster)} positive different-cluster pairs")
+            print(f"Generated {len(negative_same_cluster)} negative same-cluster pairs (constraint violations)")
+            print(f"Generated {len(negative_diff_cluster)} negative different-cluster pairs")
+            print(f"Final dataset: {len(positive_pairs)} positive, {len(negative_pairs)} negative")
+            print(f"Actual positive-to-negative ratio: {len(positive_pairs) / max(1, len(negative_pairs)):.2f}")
+            
+            return {
+                'positive_pairs': positive_pairs,
+                'negative_pairs': negative_pairs
+            }
+
+    def _sample_points_near_centroids(self, 
+                                embeddings: np.ndarray, 
+                                centroids: np.ndarray, 
+                                labels: np.ndarray,
+                                threshold: float,
+                                max_points_per_cluster: int = None) -> List[int]:
         """
-        Generate training examples for SBERT fine-tuning based on clustering results
-
-        For each anchor example, we generate:
-        1. Positive examples:
-           - one from the same cluster, similar but no constraint violations
-           - one from a different cluster, similar but no constraint violations
-        2. Negative examples:
-           - one from the same cluster that violates a constraint
-           - one from a different cluster (dissimilar)
-
+        Sample points that are close to their cluster centroids
+        
         Args:
-            data: Dictionary containing original embeddings and constraints
-            model: Fitted ConstrainedKMeans model
-            embeddings: Updated embeddings (if None, use data['embs'])
-
+            embeddings: Array of embeddings
+            centroids: Array of cluster centroids
+            labels: Array of cluster assignments
+            threshold: Distance threshold (percentile of distances)
+            max_points_per_cluster: Maximum number of points per cluster (if None, no limit)
+            
         Returns:
-            Dictionary containing positive and negative pairs
+            List of indices of points close to centroids
         """
-        # Use updated embeddings if provided
-        if embeddings is None:
-            embeddings = data['embs']
-
-        labels = model.labels_
-
-        # Store examples
-        positive_same_cluster = []
-        positive_diff_cluster = []
-        negative_same_cluster = []
-        negative_diff_cluster = []
-
-        # Sample a subset of points to use as anchors
-        sample_size = min(self.max_anchors, len(embeddings))
-        anchor_indices = random.sample(range(len(embeddings)), sample_size)
-
-        print("Generating training examples for each anchor point...")
-        for anchor_idx in tqdm(anchor_indices):
-            anchor_cluster = labels[anchor_idx]
-
-            # Get all points in the same cluster
-            same_cluster_indices = np.where(labels == anchor_cluster)[0]
-            same_cluster_indices = [idx for idx in same_cluster_indices if idx != anchor_idx]
-
-            # Skip if no points in same cluster
-            if len(same_cluster_indices) == 0:
+        selected_indices = []
+        
+        # Process each cluster
+        for cluster_id in range(len(centroids)):
+            # Get indices of points in this cluster
+            cluster_indices = np.where(labels == cluster_id)[0]
+            
+            if len(cluster_indices) == 0:
                 continue
-
-            # Get all points in different clusters
-            diff_cluster_indices = np.where(labels != anchor_cluster)[0]
-
-            # Skip if no points in different clusters
-            if len(diff_cluster_indices) == 0:
-                continue
-
-            # Simultaneously process #1 and #3: Find positive examples (no constraints) and negative examples (with constraints)
-            # from the same cluster in a single pass
-
-            # Get the constraints for the anchor point
-            anchor_constraints = self.constraint_graph.get(anchor_idx, set())
-
-            # Divide same-cluster points into those with and without constraints
-            constrained_same_cluster = []
-            unconstrained_same_cluster = []
-
-            for idx in same_cluster_indices:
-                if idx in anchor_constraints:
-                    constrained_same_cluster.append(idx)
-                else:
-                    unconstrained_same_cluster.append(idx)
-
-            # Calculate similarities for all points in same cluster at once
-            if unconstrained_same_cluster:
-                # Process positive examples (unconstrained points)
-                sims_unconstrained = np.array([
-                    self._compute_similarity(embeddings, anchor_idx, j)
-                    for j in unconstrained_same_cluster
-                ])
-
-                if len(sims_unconstrained) > 0:
-                    # Find most similar unconstrained point
-                    most_similar_idx = np.argmax(sims_unconstrained)
-                    pos_same_idx = unconstrained_same_cluster[most_similar_idx]
-                    sim_pos_same = sims_unconstrained[most_similar_idx]
-
-                    # Only add if similarity is above threshold
-                    if sim_pos_same > self.positive_threshold:
-                        positive_same_cluster.append((int(anchor_idx), int(pos_same_idx)))
-
-            if constrained_same_cluster:
-                # Process negative examples (constrained points)
-                sims_constrained = np.array([
-                    self._compute_similarity(embeddings, anchor_idx, j)
-                    for j in constrained_same_cluster
-                ])
-
-                if len(sims_constrained) > 0:
-                    # Find most similar constrained point
-                    most_similar_constrained_idx = np.argmax(sims_constrained)
-                    neg_same_idx = constrained_same_cluster[most_similar_constrained_idx]
-                    sim_neg_same = sims_constrained[most_similar_constrained_idx]
-
-                    # Only add if similarity is above threshold
-                    if sim_neg_same > self.negative_threshold:
-                        negative_same_cluster.append((int(anchor_idx), int(neg_same_idx)))
-
-            # 2. Find positive example from a different cluster (similar but no constraints)
-            # Sample points from different clusters for efficiency
-            sample_size_diff = min(self.max_comparisons_per_anchor, len(diff_cluster_indices))
-            sampled_diff = random.sample(list(diff_cluster_indices), sample_size_diff)
-
-            # Calculate similarities
-            sims_diff_cluster = np.array([
-                self._compute_similarity(embeddings, anchor_idx, j)
-                for j in sampled_diff
+                
+            # Calculate distances to centroid
+            centroid = centroids[cluster_id]
+            distances = np.array([
+                np.sum((embeddings[idx] - centroid) ** 2) 
+                for idx in cluster_indices
             ])
-
-            # Filter out points with constraint violations
-            valid_diff_indices = []
-            for i, idx in enumerate(sampled_diff):
-                if idx in self.constraint_graph.get(anchor_idx, set()):
-                    continue  # Skip if there's a constraint
-                valid_diff_indices.append(i)
-
-            if valid_diff_indices:
-                # Find most similar valid point from different cluster
-                valid_diff_sims = sims_diff_cluster[valid_diff_indices]
-                most_similar_diff_idx = valid_diff_indices[np.argmax(valid_diff_sims)]
-                pos_diff_idx = sampled_diff[most_similar_diff_idx]
-                sim_pos_diff = sims_diff_cluster[most_similar_diff_idx]
-
-                # Only add if similarity is above threshold
-                if sim_pos_diff > self.positive_threshold * 0.9:  # Slightly lower threshold
-                    positive_diff_cluster.append((int(anchor_idx), int(pos_diff_idx)))
-
-            # 4. Find negative example from a different cluster (can be any)
-            # Use already sampled points from different clusters
-            if sampled_diff:
-                # Find most dissimilar point from different cluster
-                least_similar_diff_idx = np.argmin(sims_diff_cluster)
-                neg_diff_idx = sampled_diff[least_similar_diff_idx]
-
-                # Add as negative example
-                negative_diff_cluster.append((int(anchor_idx), int(neg_diff_idx)))
-
-        # Combine all positive and negative pairs
-        positive_pairs = positive_same_cluster + positive_diff_cluster
-        negative_pairs = negative_same_cluster + negative_diff_cluster
-
-        # If target dataset size is specified, sample to achieve target size
-        if self.target_dataset_size is not None:
-            # Calculate target sizes for positive and negative based on ratio
-            total_samples = min(self.target_dataset_size, len(positive_pairs) + len(negative_pairs))
-            target_positive = int(total_samples * self.positive_negative_ratio / (1.0 + self.positive_negative_ratio))
-            target_negative = total_samples - target_positive
-
-            # Sample positive and negative pairs
-            if len(positive_pairs) > target_positive:
-                positive_pairs = random.sample(positive_pairs, target_positive)
-            if len(negative_pairs) > target_negative:
-                negative_pairs = random.sample(negative_pairs, target_negative)
-
-        print(f"Generated {len(positive_same_cluster)} positive same-cluster pairs")
-        print(f"Generated {len(positive_diff_cluster)} positive different-cluster pairs")
-        print(f"Generated {len(negative_same_cluster)} negative same-cluster pairs (constraint violations)")
-        print(f"Generated {len(negative_diff_cluster)} negative different-cluster pairs")
-        print(f"Final dataset: {len(positive_pairs)} positive, {len(negative_pairs)} negative")
-
-        return {
-            'positive_pairs': positive_pairs,
-            'negative_pairs': negative_pairs
-        }
+            
+            # Determine threshold distance (as percentile of all distances in this cluster)
+            if threshold < 1.0:
+                # Interpret as percentile if < 1.0
+                threshold_distance = np.percentile(distances, threshold * 100)
+            else:
+                # Use as absolute value if >= 1.0
+                threshold_distance = threshold
+            
+            # Select points within threshold
+            close_indices = [
+                cluster_indices[i] for i in range(len(distances)) 
+                if distances[i] <= threshold_distance
+            ]
+            
+            # If max_points_per_cluster is specified, limit the number of points from this cluster
+            if max_points_per_cluster is not None and len(close_indices) > max_points_per_cluster:
+                close_indices = random.sample(close_indices, max_points_per_cluster)
+            
+            # Add to selected indices
+            selected_indices.extend(close_indices)
+        
+        print(f"Selected {len(selected_indices)} points near centroids across {len(centroids)} clusters")
+        
+        return selected_indices
 
     def update_example_memory(self, new_examples: Dict[str, List[Tuple[int, int]]]) -> Dict[str, List[Tuple[int, int]]]:
         """
@@ -412,7 +579,7 @@ class SBERTConstrainedClusteringTrainer:
 
         # Calculate number of points to use (at least 3, at most 100)
         num_points = max(3, min(100, int(len(old_embeddings) * percentage)))
-        print(f"Using {num_points} closest points ({percentage * 100:.1f}% of data) to adjust centroids")
+        print(f"Using {num_points} closest points ({percentage * 100:.1f}% of data) to adjust centroids", flush=True)
 
         for centroid in previous_centroids:
             # Find closest points to this centroid in old space
@@ -493,7 +660,7 @@ class SBERTConstrainedClusteringTrainer:
         positive_pairs = examples['positive_pairs']
         negative_pairs = examples['negative_pairs']
 
-        print(f"Creating {len(positive_pairs)} positive and {len(negative_pairs)} negative training examples")
+        print(f"Creating {len(positive_pairs)} positive and {len(negative_pairs)} negative training examples", flush=True)
 
         # Create a dataset in HuggingFace datasets format
         train_data = []
@@ -518,12 +685,12 @@ class SBERTConstrainedClusteringTrainer:
         train_dataset = Dataset.from_list(train_data)
 
         # For evaluation, hold out 10% of data
-        train_eval = train_dataset.train_test_split(test_size=0.1)
-        train_dataset = train_eval['train']
-        eval_dataset = train_eval['test']
+        # train_eval = train_dataset.train_test_split(test_size=0.1)
+        # train_dataset = train_eval['train']
+        # eval_dataset = train_eval['test']
 
-        print(f"Train dataset: {len(train_dataset)} examples")
-        print(f"Eval dataset: {len(eval_dataset)} examples")
+        print(f"Train dataset: {len(train_dataset)} examples", flush=True)
+        # print(f"Eval dataset: {len(eval_dataset)} examples", flush=True)
 
         # Define loss function based on configuration
         if self.loss_function == 'cosine_similarity':
@@ -534,7 +701,7 @@ class SBERTConstrainedClusteringTrainer:
             loss = MultipleNegativesRankingLoss
         else:
             # Default to cosine similarity loss
-            print(f"Warning: Unknown loss function '{self.loss_function}'. Using CosineSimilarityLoss instead.")
+            print(f"Warning: Unknown loss function '{self.loss_function}'. Using CosineSimilarityLoss instead.", flush=True)
             loss = CosineSimilarityLoss
 
         # Define training arguments
@@ -552,7 +719,8 @@ class SBERTConstrainedClusteringTrainer:
             logging_dir=os.path.join(output_dir, "logs"),
             logging_steps=100,
             greater_is_better=False,
-            learning_rate=self.learning_rate
+            learning_rate=self.learning_rate,
+            report_to=[]
         )
 
         # Create the trainer
@@ -564,10 +732,10 @@ class SBERTConstrainedClusteringTrainer:
         )
 
         # Train the model
-        print(f"Fine-tuning SBERT for {self.epochs_per_iteration} epochs...")
+        print(f"Fine-tuning SBERT for {self.epochs_per_iteration} epochs...", flush=True)
         trainer.train()
 
-        print("Fine-tuning complete")
+        print("Fine-tuning complete", flush=True)
 
     def train(self,
               data: Dict,
@@ -589,9 +757,9 @@ class SBERTConstrainedClusteringTrainer:
         # Set default KMeans parameters
         if kmeans_params is None:
             kmeans_params = {
-                'max_iter': 100,
+                'max_iter': 10,
                 'tol': 1e-4,
-                'early_stopping_tol': 10,
+                'early_stopping_tol': 5,
                 'random_state': 42
             }
 
@@ -607,9 +775,12 @@ class SBERTConstrainedClusteringTrainer:
         previous_pckmeans_model = None
         previous_embeddings = None
 
+        self.constraint_graph = None
+        self.sorted_constraints = None
+
         # Main EM loop
         for iteration in range(self.max_iterations):
-            print(f"\n=== EM Iteration {iteration + 1}/{self.max_iterations} ===\n")
+            print(f"\n=== EM Iteration {iteration + 1}/{self.max_iterations} ===\n", flush=True)
 
             # Determine initialization strategy
             if self.progressive_init:
@@ -626,7 +797,7 @@ class SBERTConstrainedClusteringTrainer:
                 # Always use from_scratch strategy
                 initialization_strategy = "from_scratch"
 
-            print(f"Using initialization strategy: {initialization_strategy}")
+            print(f"Using initialization strategy: {initialization_strategy}",flush=True)
 
             # Create initializer
             initializer = KMeansPlusPlusInit(
@@ -657,11 +828,13 @@ class SBERTConstrainedClusteringTrainer:
                 n_clusters=self.n_clusters,
                 initializer=initializer,
                 w_cl=self.w_cl,
+                constraint_graph=self.constraint_graph,
+                sorted_constraints=self.sorted_constraints,
                 **kmeans_params
             )
 
             # Run clustering
-            print("Running constrained KMeans clustering...")
+            print("Running constrained KMeans clustering...", flush=True)
 
             # Set initial centroids if we have them
             if init_centroids is not None:
@@ -675,25 +848,28 @@ class SBERTConstrainedClusteringTrainer:
             # Get clustering metrics
             final_metrics = pckmeans_model.history_[-1]
             print(f"Inertia: {final_metrics.inertia:.2f}, "
-                  f"Constraint violations: {final_metrics.constraint_violations}")
+                  f"Constraint violations: {final_metrics.constraint_violations}", flush=True)
+
+            self.constraint_graph = pckmeans_model.constraint_graph
+            self.sorted_constraints = pckmeans_model.sorted_constraints
 
             # Generate training examples
-            print("Generating training examples...")
+            print("Generating training examples...", flush=True)
             new_examples = self.generate_training_examples(
                 data, pckmeans_model, embeddings
             )
 
             print(f"Generated {len(new_examples['positive_pairs'])} positive pairs and "
-                  f"{len(new_examples['negative_pairs'])} negative pairs")
+                  f"{len(new_examples['negative_pairs'])} negative pairs", flush=True)
 
             # Update example memory
             examples = self.update_example_memory(new_examples)
             print(f"Example memory has {len(examples['positive_pairs'])} positive pairs and "
-                  f"{len(examples['negative_pairs'])} negative pairs")
+                  f"{len(examples['negative_pairs'])} negative pairs", flush=True)
 
             # Check if we have enough examples
             if len(examples['positive_pairs']) < 10 or len(examples['negative_pairs']) < 10:
-                print("Warning: Not enough training examples generated. Trying with looser thresholds.")
+                print("Warning: Not enough training examples generated. Trying with looser thresholds.", flush=True)
                 # Try with looser thresholds
                 temp_pos_threshold = self.positive_threshold * 0.9
                 temp_neg_threshold = self.negative_threshold * 0.9
@@ -713,21 +889,21 @@ class SBERTConstrainedClusteringTrainer:
                 self.negative_threshold = self.negative_threshold / 0.9
 
                 print(f"With looser thresholds, generated {len(examples['positive_pairs'])} positive pairs and "
-                      f"{len(examples['negative_pairs'])} negative pairs")
+                      f"{len(examples['negative_pairs'])} negative pairs", flush=True)
 
                 # If still not enough, consider stopping
                 if len(examples['positive_pairs']) < 10 or len(examples['negative_pairs']) < 10:
-                    print("Warning: Still not enough examples. Continuing with what we have.")
+                    print("Warning: Still not enough examples. Continuing with what we have.",flush=True)
                     if iteration > 0:
                         break
 
 
 
-            print("Fine-tuning SBERT...")
+            print("Fine-tuning SBERT...",flush=True)
             self.finetune_sbert(examples, sentences)
 
             # Update embeddings
-            print("Updating embeddings...")
+            print("Updating embeddings...", flush=True)
             previous_embeddings = embeddings.copy()
             embeddings = self.sbert_model.encode(
                 sentences, batch_size=32, show_progress_bar=True, normalize_embeddings=True
@@ -746,12 +922,7 @@ class SBERTConstrainedClusteringTrainer:
             previous_pckmeans_model = pckmeans_model
 
 
-        return {
-            'final_model': pckmeans_model,
-            'sbert_model': self.sbert_model,
-            'updated_embeddings': embeddings,
-            'metrics': iteration_metrics
-        }
+        return pckmeans_model, self.sbert_model, embeddings, iteration_metrics
 
     def save(self, config, pckmeans_model, embs):
         """Save the model to a file."""
@@ -774,7 +945,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PCKmeans Clustering')
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
-    parser.add_argument('-i', metavar='MAX_ITER', default=100, type=int, help='maximum number of iterations')
+    parser.add_argument('-i', metavar='MAX_ITER', default=5, type=int, help='maximum number of iterations')
     parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
 
     args = parser.parse_args()
@@ -790,7 +961,12 @@ if __name__ == '__main__':
         data = pickle.load(f)
 
     framework = SBERTConstrainedClusteringTrainer(n_clusters=args.k,
-                                                  w_cl=args.w)
+                                                  w_cl=args.w,
+                                                  use_all_anchors=False,
+                                                  sample_near_centroids=True,
+                                                  progressive_init=False,
+                                                  memory_decay_factor=1.0,
+                                                  save_dir="./data/immigration/")
 
     pckmeans_model, sbert_model, embs, metrics = framework.train(data)
 
