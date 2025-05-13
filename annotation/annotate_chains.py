@@ -10,13 +10,15 @@ from utils.ollama_client import Ollama
 
 
 class Annotator:
-    def __init__(self, host, port, config):
+    def __init__(self, host, port, config, model='llama3.3', thinking=False):
         self.ollama_client = Ollama(host,
                                     port,
-                                    'llama3.3',
+                                    model,
                                     seed=42,
                                     temperature=0.1)
+        self.thinking = thinking
         self.config = config
+
 
     def process_documents(self, num_workers, save_interval):
         with open(self.config["event_chains_path"], 'rb') as f:
@@ -54,7 +56,7 @@ class Annotator:
         # Final save at the end, in case it wasn't saved during the last interval
         self.save_progress(annotated_docs)
 
-    def process_document(self, doc_idx, doc):
+    def process_document(self, doc):
         # Process each document's event chains
         for event_chain_idx, event_chain in doc['event_chains'].items():
             annotation = self.annotate(event_chain['chain_text'])

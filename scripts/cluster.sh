@@ -30,7 +30,7 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 # python3 ./clustering/weighted_pckmeans.py -c "immigration" -k $1 -w $2
 
-python3 ./clustering/finetuned_pckmeans.py -c "immigration" -k 250 -w 1
+python3 ./clustering/finetuned_pckmeans.py -c "immigration" -k 1000 -w 0.001
 
 # python3 ./clustering/kmeans.py -c "immigration" -k $1
 

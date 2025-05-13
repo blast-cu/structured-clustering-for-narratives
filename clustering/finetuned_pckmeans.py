@@ -40,6 +40,7 @@ class SBERTConstrainedClusteringTrainer:
                  use_all_anchors: bool = False,
                  sample_near_centroids: bool = False,
                  centroid_distance_threshold: float = 0.5,
+                 centroid_similarity_threshold: float = -1.0,
                  max_comparisons_per_anchor: int = 1000,
                  target_dataset_size: Optional[int] = None,
                  positive_negative_ratio: float = 1.0,
@@ -97,6 +98,7 @@ class SBERTConstrainedClusteringTrainer:
         self.max_comparisons_per_anchor = max_comparisons_per_anchor
         self.sample_near_centroids = sample_near_centroids
         self.centroid_distance_threshold = centroid_distance_threshold
+        self.centroid_similarity_threshold = centroid_similarity_threshold
         self.target_dataset_size = target_dataset_size
         self.positive_negative_ratio = positive_negative_ratio
 
@@ -218,6 +220,7 @@ class SBERTConstrainedClusteringTrainer:
                     model.cluster_centers_, 
                     labels,
                     self.centroid_distance_threshold,
+                    self.centroid_similarity_threshold,
                     # No maximum points per cluster - let the threshold determine the count
                     max_points_per_cluster=None
                 )
@@ -449,23 +452,25 @@ class SBERTConstrainedClusteringTrainer:
             }
 
     def _sample_points_near_centroids(self, 
-                                embeddings: np.ndarray, 
-                                centroids: np.ndarray, 
-                                labels: np.ndarray,
-                                threshold: float,
-                                max_points_per_cluster: int = None) -> List[int]:
+                            embeddings: np.ndarray, 
+                            centroids: np.ndarray, 
+                            labels: np.ndarray,
+                            distance_threshold: float,
+                            similarity_threshold: float = 0.5,  # New parameter
+                            max_points_per_cluster: int = None) -> List[int]:
         """
-        Sample points that are close to their cluster centroids
+        Sample points that are close to their cluster centroids and have high similarity to them
         
         Args:
             embeddings: Array of embeddings
             centroids: Array of cluster centroids
             labels: Array of cluster assignments
-            threshold: Distance threshold (percentile of distances)
+            distance_threshold: Distance threshold (percentile of distances)
+            similarity_threshold: Minimum cosine similarity to centroid
             max_points_per_cluster: Maximum number of points per cluster (if None, no limit)
             
         Returns:
-            List of indices of points close to centroids
+            List of indices of points close to centroids with high similarity
         """
         selected_indices = []
         
@@ -485,17 +490,33 @@ class SBERTConstrainedClusteringTrainer:
             ])
             
             # Determine threshold distance (as percentile of all distances in this cluster)
-            if threshold < 1.0:
+            if distance_threshold < 1.0:
                 # Interpret as percentile if < 1.0
-                threshold_distance = np.percentile(distances, threshold * 100)
+                threshold_distance = np.percentile(distances, distance_threshold * 100)
             else:
                 # Use as absolute value if >= 1.0
-                threshold_distance = threshold
+                threshold_distance = distance_threshold
             
-            # Select points within threshold
+            # Calculate cosine similarities to centroid
+            similarities = []
+            for idx in cluster_indices:
+                point_embedding = embeddings[idx]
+                # Compute cosine similarity
+                norm_point = np.linalg.norm(point_embedding)
+                norm_centroid = np.linalg.norm(centroid)
+                
+                if norm_point == 0 or norm_centroid == 0:
+                    similarity = 0.0
+                else:
+                    similarity = np.dot(point_embedding, centroid) / (norm_point * norm_centroid)
+                    
+                similarities.append(similarity)
+            similarities = np.array(similarities)
+            
+            # Select points within distance threshold AND above similarity threshold
             close_indices = [
                 cluster_indices[i] for i in range(len(distances)) 
-                if distances[i] <= threshold_distance
+                if distances[i] <= threshold_distance and similarities[i] >= similarity_threshold
             ]
             
             # If max_points_per_cluster is specified, limit the number of points from this cluster
@@ -505,7 +526,8 @@ class SBERTConstrainedClusteringTrainer:
             # Add to selected indices
             selected_indices.extend(close_indices)
         
-        print(f"Selected {len(selected_indices)} points near centroids across {len(centroids)} clusters")
+        print(f"Selected {len(selected_indices)} points near centroids across {len(centroids)} clusters", flush=True)
+        print(f"Points satisfy both distance threshold ({distance_threshold}) and similarity threshold ({similarity_threshold})", flush=True)
         
         return selected_indices
 
@@ -720,7 +742,10 @@ class SBERTConstrainedClusteringTrainer:
             logging_steps=100,
             greater_is_better=False,
             learning_rate=self.learning_rate,
-            report_to=[]
+            report_to=[],
+            save_strategy="no",
+            save_total_limit=0,           
+            load_best_model_at_end=False
         )
 
         # Create the trainer
@@ -777,6 +802,13 @@ class SBERTConstrainedClusteringTrainer:
 
         self.constraint_graph = None
         self.sorted_constraints = None
+
+        best_model = {
+            'model': None,
+            'embs': None,
+            'inertia': float('inf'),
+            'constraint_violations': float('inf')
+        }
 
         # Main EM loop
         for iteration in range(self.max_iterations):
@@ -849,6 +881,20 @@ class SBERTConstrainedClusteringTrainer:
             final_metrics = pckmeans_model.history_[-1]
             print(f"Inertia: {final_metrics.inertia:.2f}, "
                   f"Constraint violations: {final_metrics.constraint_violations}", flush=True)
+            
+
+            # Check if best model
+            if final_metrics.constraint_violations < best_model['constraint_violations']:
+                best_model['model'] = pckmeans_model
+                best_model['embs'] = embeddings
+                best_model['inertia'] = final_metrics.inertia
+                best_model['constraint_violations'] = final_metrics.constraint_violations
+                print("Found new best model!", flush=True)
+
+            # if last iteration,break
+            if iteration == self.max_iterations - 1:
+                print("Reached maximum iterations. Stopping training.", flush=True)
+                break
 
             self.constraint_graph = pckmeans_model.constraint_graph
             self.sorted_constraints = pckmeans_model.sorted_constraints
@@ -862,10 +908,12 @@ class SBERTConstrainedClusteringTrainer:
             print(f"Generated {len(new_examples['positive_pairs'])} positive pairs and "
                   f"{len(new_examples['negative_pairs'])} negative pairs", flush=True)
 
-            # Update example memory
-            examples = self.update_example_memory(new_examples)
-            print(f"Example memory has {len(examples['positive_pairs'])} positive pairs and "
-                  f"{len(examples['negative_pairs'])} negative pairs", flush=True)
+            # # Update example memory
+            # examples = self.update_example_memory(new_examples)
+            # print(f"Example memory has {len(examples['positive_pairs'])} positive pairs and "
+            #       f"{len(examples['negative_pairs'])} negative pairs", flush=True)
+
+            examples = new_examples
 
             # Check if we have enough examples
             if len(examples['positive_pairs']) < 10 or len(examples['negative_pairs']) < 10:
@@ -922,7 +970,7 @@ class SBERTConstrainedClusteringTrainer:
             previous_pckmeans_model = pckmeans_model
 
 
-        return pckmeans_model, self.sbert_model, embeddings, iteration_metrics
+        return best_model
 
     def save(self, config, pckmeans_model, embs):
         """Save the model to a file."""
@@ -968,6 +1016,6 @@ if __name__ == '__main__':
                                                   memory_decay_factor=1.0,
                                                   save_dir="./data/immigration/")
 
-    pckmeans_model, sbert_model, embs, metrics = framework.train(data)
+    best_model = framework.train(data)
 
-    framework.save(config, pckmeans_model, embs)
+    framework.save(config, best_model['model'], best_model['embs'])

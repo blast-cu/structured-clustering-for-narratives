@@ -4,12 +4,12 @@
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=16
+#SBATCH --ntasks-per-node=4
 #SBATCH --time=1-00:00:00
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
 #SBATCH --gres=gpu:1
-#SBATCH --mem=50G
+#SBATCH --mem=100G
 #SBATCH --job-name=event_preprocess
 #SBATCH --output=logs/event.%j.log
 
@@ -23,38 +23,38 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 python3 -m spacy download en_core_web_lg
 
-source="mfc" # mfc or partisanship
-corpus="mfc/guncontrol"
+source="partisanship" # mfc or partisanship
+corpus="immigration"
 
 # ONLY for Partisanship - Parse Partisanship data structured to generate corpus_labeled.json
-# python3 ./preprocessing/${source}/parse_partisanship_data_structure.py \
-#     --input_file ./data/${corpus}/article_data.pkl \
-#     --save_path ./data/${corpus}/
+python3 ./preprocessing/${source}/parse_partisanship_data_structure.py \
+    --input_file ./data/${source}/${corpus}/article_data.pkl \
+    --save_path ./data/${source}/${corpus}/
 
 # Generate corpus.txt
-# python3 ./preprocessing/${source}/gen_corpus.py \
-#     --input_file ./data/${source}/${corpus}/corpus_labeled.json \
-#     --save_path ./data/${source}/${corpus}/
+python3 ./preprocessing/${source}/gen_corpus.py \
+    --input_file ./data/${source}/${corpus}/corpus_labeled.json \
+    --save_path ./data/${source}/${corpus}/
 
-# echo "gen_corpus.py done"
+echo "gen_corpus.py done"
 
 
 # Parse Corpus and Extract Subject-Verb-Object Triplets
-# python3 ./preprocessing/parse_corpus_and_extract_svo.py \
-#     --is_sentence 1 \
-#     --input_file ./data/${source}/${corpus}/corpus.txt \
-#     --save_path ./data/${source}/${corpus}/corpus_parsed_svo.pk
+python3 ./preprocessing/parse_corpus_and_extract_svo.py \
+    --is_sentence 1 \
+    --input_file ./data/${source}/${corpus}/corpus.txt \
+    --save_path ./data/${source}/${corpus}/corpus_parsed_svo.pk
 
-# echo "parse_corpus_and_extract_svo.py done"
+echo "parse_corpus_and_extract_svo.py done"
 
 
 # Select Salient Verb Lemmas and Object Heads
 python3 ./preprocessing/select_salient_terms.py \
     --corpus_w_svo_pickle ./data/${source}/${corpus}/corpus_parsed_svo.pk \
-    --min_verb_freq 1 \
-    --min_obj_freq 1 \
-    --top_verb_ratio 1.0 \
-    --top_obj_ratio 1.0
+    --min_verb_freq 3 \
+    --min_obj_freq 3 \
+    --top_verb_ratio 0.8 \
+    --top_obj_ratio 0.8
 
 echo "select_salient_terms.py done"
 
@@ -100,18 +100,19 @@ echo "generate_po_tuple_features.py done"
 
 # Partisanship -Generate files for mapping each event (and frequency) to its original article and sentence
 
-# python3 ./preprocessing/${source}/map_events_to_articles.py \
-#   --partisanship_corpus ./data/${corpus}/corpus_labeled.json \
-#   --processed_corpus ./data/${corpus}/corpus.txt \
-#   --po_tuple_features ./data/${corpus}/po_tuple_features_all_svos.pk \
-#   --doc_2_sent ./data/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
-#   --output_file ./data/${corpus}/processed_corpus.json
+python3 ./preprocessing/${source}/map_events_to_articles.py \
+  --partisanship_corpus ./data/${source}/${corpus}/corpus_labeled.json \
+  --processed_corpus ./data/${source}/${corpus}/corpus.txt \
+  --po_tuple_features ./data/${source}/${corpus}/po_tuple_features_all_svos.pk \
+  --doc_2_sent ./data/${source}/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
+  --output_file ./data/${source}/${corpus}/processed_corpus.json
 
 echo "map_article_event_freq.py done"
 
 # Sample documents from full dataset
 python3 ./preprocessing/${source}/sample_docs.py \
   --corpus ./data/${source}/${corpus}/processed_corpus.json \
-  --output_file ./data/${source}/${corpus}/processed_corpus_3000.json
+  --sample_size 2000 \
+  --output_file ./data/${source}/${corpus}/processed_corpus_2000.json
 
 echo "sample_docs.py done"
