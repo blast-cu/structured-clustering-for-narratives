@@ -1,34 +1,48 @@
 import argparse
 import json
 import pickle
+import re
 import concurrent.futures
 
 from pyhocon import ConfigFactory
 from tqdm import tqdm
 
-from schemas import EventChainAnnotation
+from schemas.event_chain_annotation_schema import EventChainAnnotation
 from utils.ollama_client import Ollama
 
 
 class Annotator:
-    def __init__(self, host, port, config, domain, model='llama3.3', thinking=False):
+    def __init__(self, host, port, config, domain, model='llama3.3'):
+        self.config = config
+
         self.reasoning_model = Ollama(host,
                                       port,
                                       model,
                                       seed=42,
                                       temperature=0.1)
+        
         self.output_model = Ollama(host,
                                       port,
-                                      'gemma3:12b',
+                                      'gemma3:4b',
                                       seed=42,
                                       temperature=0.1)
-        self.thinking = thinking
-        self.config = config
+
+        with open("./annotation/prompts/role_and_stance/system_prompt.md", 'r', encoding='utf-8') as file:
+            self.reasoning_system_prompt = file.read()
+        with open("./annotation/prompts/role_and_stance/structured_output.md", 'r', encoding='utf-8') as file:
+            self.structured_output_system_prompt = file.read()
 
         self.domain = domain
         self.immigration_char_group = '{Immigrants, Refugees, Asylum Seekers, Workers, Politicians, Law Enforcement, ' \
                                       'Judiciary, Government, Immigration Advocates}'
         self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims}'
+
+        if self.domain == 'Gun Control':
+            with open("./annotation/prompts/role_and_stance/guncontrol_role_descriptions.md", 'r', encoding='utf-8') as file:
+                self.role_descriptions = file.read()
+        elif self.domain == "Immigration":
+            with open("./annotation/prompts/role_and_stance/immigration_role_descriptions.md", 'r', encoding='utf-8') as file:
+                self.role_descriptions = file.read()
 
     def process_documents(self, num_workers, save_interval, sequential=False):
         with open(self.config["annotated_event_chains_path"], 'rb') as f:
@@ -107,29 +121,25 @@ class Annotator:
             pickle.dump(annotated_docs, f)
 
     def annotate(self, article, event_chain):
-        with open("./annotation/prompts/role_and_stance.md", 'r', encoding='utf-8') as file:
-            reasoning_system_prompt = file.read()
-
-        with open("./annotation/prompts/role_descriptions.md", 'r', encoding='utf-8') as file:
-            role_descriptions = file.read()
-
         reasoning_user_prompt = (f"DOMAIN: \"{self.domain}\" \n EVENT CHAIN: \"{event_chain}\" \n CHARACTER GROUPS:"
-                       f"{self.guncontrol_char_group} \n ROLE DESCRIPTIONS: {role_descriptions} \n ARTICLE: \"{article}\" \n ")
-
-        with open("./annotation/prompts/structured_output.md", 'r', encoding='utf-8') as file:
-            structured_output_system_prompt = file.read()
+                       f"{self.guncontrol_char_group} \n ROLE DESCRIPTIONS: {self.role_descriptions} \n ARTICLE: \"{article}\" \n ")
 
         max_retries = 5
         retry_count = 0
         while retry_count < max_retries:
             try:
-                reasoning_model_response = self.reasoning_model.chat(reasoning_system_prompt,
+                reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
                                                                      reasoning_user_prompt)
-                structured_response = self.output_model.chat(structured_output_system_prompt,
-                                                             reasoning_model_response,
-                                                             format=EventChainAnnotation.model_json_schema())
+                
+                _ , json_content = self.extract_thinking_response(reasoning_model_response)
+                
+                structured_response = self.output_model.chat(self.structured_output_system_prompt,
+                                                             json_content,
+                                                             format=EventChainAnnotation.schema())
                 try:
-                    response = json.loads(structured_response)
+                    response_json = json.loads(structured_response)
+                    response = EventChainAnnotation.validate(response_json)
+                    pass
                 except Exception as e:
                     print("Exception: " + str(e), flush=True)
                     print("Invalid response. Please try again.", flush=True)
@@ -140,6 +150,25 @@ class Annotator:
                 retry_count += 1
         return None
 
+    def extract_thinking_response(self, response):
+        # Extract content within <think> tags
+        think_pattern = r'<think>(.*?)</think>'
+        think_match = re.search(think_pattern, response, re.DOTALL)
+        think_content = think_match.group(1) if think_match else None
+        
+        # Remove the entire <think> section from the text to prevent extracting JSON from within it
+        if think_match:
+            full_think_section = think_match.group(0)  # This includes the <think> tags
+            response_without_think = response.replace(full_think_section, '')
+        else:
+            response_without_think = response
+        
+        # Extract JSON string from the remaining text
+        # json_pattern = r'(\{.*?\}|\[.*?\])'
+        # json_match = re.search(json_pattern, response_without_think, re.DOTALL)
+        # json_content = json_match.group(0) if json_match else None
+        
+        return think_content, response_without_think
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Annotator')
@@ -155,6 +184,5 @@ if __name__ == '__main__':
 
     annotator = Annotator(args.host, args.port, config,
                           domain='Gun Control',
-                          model='deepseek-r1:70b-llama-distill-q4_K_M',
-                          thinking=True)
+                          model='deepseek-r1:70b-llama-distill-q4_K_M')
     annotator.process_documents(args.workers, args.save_interval, args.sequential)

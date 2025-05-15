@@ -3,7 +3,7 @@ from typing import List
 from enum import Enum
 
 class CharacterGroup(str, Enum):
-    POLITICIANS = "Politicans"  # Note: maintaining the original spelling
+    POLITICIANS = "Politicians"
     GUN_CONTROL_ADVOCATES = "Gun Control Advocates"
     GUN_RIGHT_ADVOCATES = "Gun Right Advocates"
     LAW_ENFORCEMENT = "Law Enforcement"

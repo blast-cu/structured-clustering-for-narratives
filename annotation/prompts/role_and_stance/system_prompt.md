@@ -15,6 +15,7 @@ For each submission, you will:
 - Map specific entities to the most appropriate character group
 - Include ALL entities involved in the event chain
 - Use the exact wording from the event chain when listing specific entities
+- Places and locations such as countries, states, cities, streets etc. are NOT valid character entities - ignore them
 
 ### Role Classification
 
@@ -53,3 +54,4 @@ Provide your analysis in this structured format:
   "stance": "[Pro/Anti/Neutral]",
   "stance_justification": "[Brief explanation with textual evidence while focusing mainly on the event chain]"
 }
+```
