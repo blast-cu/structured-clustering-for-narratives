@@ -21,7 +21,8 @@ class ChainVerbalizer:
         self.config = config
 
         self.domain = domain
-        self.immigration_char_group = '{Immigrants, Refugees, Asylum Seekers, Politicians, Law Enforcement, Judiciary, Government, Immigration Advocates}'
+        self.immigration_char_group = '{Immigrants, Refugees, Asylum Seekers, Workers, Politicians, Law Enforcement, ' \
+                                      'Judiciary, Government, Immigration Advocates}'
         self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims}'
 
 

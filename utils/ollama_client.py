@@ -13,7 +13,7 @@ class Ollama:
 
         ollama.pull(self.model)
 
-    def chat(self, system_prompt="", user_prompt=""):
+    def chat(self, system_prompt="", user_prompt="", format=None):
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -26,6 +26,7 @@ class Ollama:
 
         response = self.client.chat(self.model,
                                     messages=messages,
+                                    format=format,
                                     options=options)
 
         return response['message']['content']
