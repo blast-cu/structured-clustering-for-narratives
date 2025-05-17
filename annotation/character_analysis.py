@@ -27,9 +27,9 @@ class CharacterAnalyzer:
                                       seed=42,
                                       temperature=0.1)
 
-        with open("./annotation/prompts/role_and_stance/system_prompt.md", 'r', encoding='utf-8') as file:
+        with open("./annotation/prompts/character_analysis/system_prompt.md", 'r', encoding='utf-8') as file:
             self.reasoning_system_prompt = file.read()
-        with open("./annotation/prompts/role_and_stance/structured_output.md", 'r', encoding='utf-8') as file:
+        with open("./annotation/prompts/character_analysis/structured_output.md", 'r', encoding='utf-8') as file:
             self.structured_output_system_prompt = file.read()
 
         self.domain = domain
@@ -38,10 +38,10 @@ class CharacterAnalyzer:
         self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims}'
 
         if self.domain == 'Gun Control':
-            with open("./annotation/prompts/role_and_stance/guncontrol_role_descriptions.md", 'r', encoding='utf-8') as file:
+            with open("./annotation/prompts/character_analysis/guncontrol_role_descriptions.md", 'r', encoding='utf-8') as file:
                 self.role_descriptions = file.read()
         elif self.domain == "Immigration":
-            with open("./annotation/prompts/role_and_stance/immigration_role_descriptions.md", 'r', encoding='utf-8') as file:
+            with open("./annotation/prompts/character_analysis/immigration_role_descriptions.md", 'r', encoding='utf-8') as file:
                 self.role_descriptions = file.read()
 
     def process_documents(self, num_workers, save_interval, sequential=False):
