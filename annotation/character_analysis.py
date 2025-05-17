@@ -7,11 +7,11 @@ import concurrent.futures
 from pyhocon import ConfigFactory
 from tqdm import tqdm
 
-from schemas.event_chain_annotation_schema import EventChainAnnotation
+from schemas import EventChainAnnotation
 from utils.ollama_client import Ollama
 
 
-class Annotator:
+class CharacterAnalyzer:
     def __init__(self, host, port, config, domain, model='llama3.3'):
         self.config = config
 
@@ -135,10 +135,9 @@ class Annotator:
                 
                 structured_response = self.output_model.chat(self.structured_output_system_prompt,
                                                              json_content,
-                                                             format=EventChainAnnotation.schema())
+                                                             format=EventChainAnnotation.model_json_schema())
                 try:
-                    response_json = json.loads(structured_response)
-                    response = EventChainAnnotation.validate(response_json)
+                    response = EventChainAnnotation.model_validate_json(structured_response)
                     pass
                 except Exception as e:
                     print("Exception: " + str(e), flush=True)
@@ -150,7 +149,8 @@ class Annotator:
                 retry_count += 1
         return None
 
-    def extract_thinking_response(self, response):
+    @staticmethod
+    def extract_thinking_response(response):
         # Extract content within <think> tags
         think_pattern = r'<think>(.*?)</think>'
         think_match = re.search(think_pattern, response, re.DOTALL)
@@ -171,7 +171,7 @@ class Annotator:
         return think_content, response_without_think
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Annotator')
+    parser = argparse.ArgumentParser(description='CharacterAnalyzer')
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('--host', metavar='HOST')
     parser.add_argument('--port', default=9999, metavar='PORT')
@@ -182,7 +182,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    annotator = Annotator(args.host, args.port, config,
-                          domain='Gun Control',
-                          model='deepseek-r1:70b-llama-distill-q4_K_M')
+    annotator = CharacterAnalyzer(args.host, args.port, config,
+                                  domain='Gun Control',
+                                  model='deepseek-r1:70b-llama-distill-q4_K_M')
     annotator.process_documents(args.workers, args.save_interval, args.sequential)

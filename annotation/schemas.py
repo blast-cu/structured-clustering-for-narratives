@@ -35,3 +35,6 @@ class EventChainAnnotation(BaseModel):
         ...,
         description="Brief explanation with textual evidence while focusing mainly on the event chain"
     )
+
+class EventChainSentence(BaseModel):
+    sentence: str = Field(..., description="The sentence expanding the event chain")

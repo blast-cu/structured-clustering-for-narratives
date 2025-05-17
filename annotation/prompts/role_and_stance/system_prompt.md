@@ -39,7 +39,7 @@ Each annotation task will include:
 - **ARTICLE**: The complete news article containing the event chain
 
 ## Output Format
-Provide your analysis in this structured format:
+Provide your analysis in this JSON format:
 
 ```json
 {
