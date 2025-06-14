@@ -1,5 +1,5 @@
 import argparse
-import json
+import os
 import pickle
 import re
 import concurrent.futures
@@ -35,15 +35,17 @@ class ChainVerbalizer:
         self.domain = domain
         self.immigration_char_group = '{Immigrants, Refugees, Asylum Seekers, Workers, Politicians, Law Enforcement, ' \
                                       'Judiciary, Government, Immigration Advocates}'
-        self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims}'
+        self.guncontrol_char_group = ('{Politicans, Gun Control Advocates, Gun Rights Advocates, Law Enforcement, '
+                                      'Judiciary, Government, Gun Crime Victims}')
 
 
 
     def process_documents(self, num_workers, save_interval, sequential=False):
-        with open(self.config["annotated_event_chains_path"], 'rb') as f:
+        with open(self.config["relations_path"], 'rb') as f:
             data = pickle.load(f)
 
         annotated_docs = {}
+        processed_docs = self.load_existing_progress()
         total_docs = len(data)
 
         if sequential:
@@ -51,6 +53,12 @@ class ChainVerbalizer:
             with tqdm(total=total_docs) as pbar:
                 processed_count = 0
                 for doc_idx, doc in data.items():
+                    if doc_idx in processed_docs:
+                        # Skip already processed documents
+                        annotated_docs[doc_idx] = processed_docs[doc_idx]
+                        processed_count += 1
+                        pbar.update(1)
+                        continue
                     try:
                         processed_doc = self.process_document(doc)
                         annotated_docs[doc_idx] = processed_doc
@@ -77,6 +85,12 @@ class ChainVerbalizer:
                     # Process documents and save at regular intervals
                     for future in concurrent.futures.as_completed(futures):
                         doc_idx = futures[future]
+                        if doc_idx in processed_docs:
+                            # Skip already processed documents
+                            annotated_docs[doc_idx] = processed_docs[doc_idx]
+                            processed_count += 1
+                            pbar.update(1)
+                            continue
                         try:
                             doc = future.result()
                             annotated_docs[doc_idx] = doc
@@ -97,18 +111,56 @@ class ChainVerbalizer:
         self.save_progress(annotated_docs)
 
     def process_document(self, doc):
-        # Process each document's event chains
-        for event_chain_idx, event_chain in doc['event_chains'].items():
-            if 'CAUSAL' in event_chain['event_chain']:
-                chain = event_chain['event_chain']
-                article = doc['text']
-                if self.domain == 'Gun Control':
-                    char_groups = self.guncontrol_char_group
-                elif self.domain == 'Immigration':
-                    char_groups = self.immigration_char_group
-                annotation = self.annotate(self.domain, chain, char_groups, article)
-            # doc['event_chains'][event_chain_idx]['annotation'] = annotation
+        article = doc['text']
+        if self.domain == 'guncontrol':
+            char_groups = self.guncontrol_char_group
+        elif self.domain == 'immigration':
+            char_groups = self.immigration_char_group
+
+        # Build event map from the document
+        event_map = {}
+        for sentence in doc['sentences']:
+            for event in doc['sentences'][sentence]['events']:
+                event_map[event[0]] = (event[1].split("_")[0], event[2])
+
+        # Initialize the event chains dictionary
+        event_chains = {}
+        event_chain_idx = 0
+        for key in doc['relations']:
+            event_chain = {}
+            if doc['relations'][key][0] == 'Causal':
+                event_1 = event_map[key[0]]
+                relation = doc['relations'][key].upper()
+                event_2 = event_map[key[1]]
+                event_chain[
+                    'event_chain'] = f"(({event_1[0]}, {event_1[1]}), {relation}, ({event_2[0]}, {event_2[1]}))"
+                event_chain['chain_text'] = self.annotate(self.domain, event_chain['event_chain'], char_groups, article)
+
+            if event_chain:
+                event_chains[event_chain_idx] = event_chain
+                event_chain_idx += 1
+
+        doc['event_chains'] = event_chains
         return doc
+
+    def load_existing_progress(self):
+        """Load existing processed documents if save file exists"""
+        save_path = self.config["annotated_event_chains_path"]
+
+        if os.path.exists(save_path):
+            print(f"Found existing save file: {save_path}")
+            try:
+                with open(save_path, 'rb') as f:
+                    existing_data = pickle.load(f)
+                print(f"Loaded {len(existing_data)} existing documents")
+                return existing_data
+            except Exception as e:
+                print(f"Error loading existing save file: {e}")
+                print("Starting fresh...")
+                return {}
+        else:
+            print("No existing save file found. Starting fresh...")
+            return {}
 
     def save_progress(self, annotated_docs):
         with open(self.config["annotated_event_chains_path"], 'wb') as f:
@@ -131,7 +183,7 @@ class ChainVerbalizer:
                                                              format=EventChainSentence.model_json_schema())
                 try:
                     response = EventChainSentence.model_validate_json(structured_response)
-                    pass
+                    return response
                 except Exception as e:
                     print("Exception: " + str(e), flush=True)
                     print("Invalid response. Please try again.", flush=True)
@@ -155,12 +207,6 @@ class ChainVerbalizer:
             response_without_think = response.replace(full_think_section, '')
         else:
             response_without_think = response
-
-        # Extract JSON string from the remaining text
-        # json_pattern = r'(\{.*?\}|\[.*?\])'
-        # json_match = re.search(json_pattern, response_without_think, re.DOTALL)
-        # json_content = json_match.group(0) if json_match else None
-        #
         return think_content, response_without_think
 
 
@@ -170,13 +216,13 @@ if __name__ == '__main__':
     parser.add_argument('--host', metavar='HOST')
     parser.add_argument('--port', default=9999, metavar='PORT')
     parser.add_argument('--workers', type=int, default=4, metavar='WORKERS', help='Number of worker threads')
+    parser.add_argument('--domain', metavar='DOMAIN')
     parser.add_argument('--save_interval', type=int, default=10, metavar='SAVE_INTERVAL',
                         help='Number of documents to process before saving progress')
     parser.add_argument('--sequential', action='store_true', help='Run in sequential mode instead of parallel')
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    annotator = ChainVerbalizer(args.host, args.port, config, 
-                                domain='Immigration',
-                                model='deepseek-r1:32b-qwen-distill-q4_K_M')
+    annotator = ChainVerbalizer(args.host, args.port, config, args.domain,
+                                model='deepseek-r1:70b-llama-distill-q4_K_M')
     annotator.process_documents(args.workers, args.save_interval, args.sequential)
