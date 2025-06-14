@@ -1,16 +1,16 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blast-lecs-gpu
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=32
-#SBATCH --time=1-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --gres=gpu:2
+#SBATCH --ntasks-per-node=10
+#SBATCH --time=7-00:00:00
+#SBATCH --qos=blast-lecs-gpu
+#SBATCH --partition=blast-lecs-gpu
+#SBATCH --gres=gpu:1gpu:h100_7g.80gb
 #SBATCH --mem=50G
-#SBATCH --job-name=annotate_chains
+#SBATCH --job-name=verbalize_chains
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc

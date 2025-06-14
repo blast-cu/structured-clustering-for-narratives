@@ -24,7 +24,7 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 python3 -m spacy download en_core_web_lg
 
 source="partisanship" # mfc or partisanship
-corpus="immigration"
+corpus="guncontrol"
 
 # ONLY for Partisanship - Parse Partisanship data structured to generate corpus_labeled.json
 python3 ./preprocessing/${source}/parse_partisanship_data_structure.py \
@@ -99,7 +99,6 @@ echo "generate_po_tuple_features.py done"
 # echo "map_article_event_freq.py done"
 
 # Partisanship -Generate files for mapping each event (and frequency) to its original article and sentence
-
 python3 ./preprocessing/${source}/map_events_to_articles.py \
   --partisanship_corpus ./data/${source}/${corpus}/corpus_labeled.json \
   --processed_corpus ./data/${source}/${corpus}/corpus.txt \
