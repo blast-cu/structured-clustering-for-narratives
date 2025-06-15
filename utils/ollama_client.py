@@ -21,7 +21,9 @@ class Ollama:
 
         options: ollama.Options = {
             "seed": self.seed,
-            "temperature": self.temperature
+            "temperature": self.temperature,
+            "num_ctx": 12288,
+            "num_predict": 2048
         }
 
         response = self.client.chat(self.model,

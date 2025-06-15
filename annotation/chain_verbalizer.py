@@ -1,5 +1,6 @@
 import argparse
 import os
+import gc
 import pickle
 import re
 import concurrent.futures
@@ -50,6 +51,8 @@ class ChainVerbalizer:
         else:
             annotated_docs = {}
         total_docs = len(data)
+
+        print(f"Total documents to process: {total_docs - len(annotated_docs)}", flush=True)
 
         if sequential:
             # Sequential processing
@@ -142,6 +145,10 @@ class ChainVerbalizer:
                     event_chain_idx += 1
 
         doc['event_chains'] = event_chains
+
+        del article, event_map, event_chains
+        gc.collect()
+
         return doc
 
     def load_existing_progress(self):
