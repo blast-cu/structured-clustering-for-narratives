@@ -1,31 +1,34 @@
 import argparse
-import json
+import os
 import pickle
 import re
+import shutil
 import concurrent.futures
 
 from pyhocon import ConfigFactory
 from tqdm import tqdm
 
-from schemas import EventChainAnnotation
+from schemas import ImmigrationEventChainAnnotation, GunControlEventChainAnnotation
 from utils.ollama_client import Ollama
 
 
 class CharacterAnalyzer:
-    def __init__(self, host, port, config, domain, model='llama3.3'):
+    def __init__(self, host, port, config, domain):
         self.config = config
 
         self.reasoning_model = Ollama(host,
                                       port,
-                                      model,
-                                      seed=42,
-                                      temperature=0.1)
-        
+                                      config['reasoning_model'],
+                                      config['seed'],
+                                      config['temperature'])
+
         self.output_model = Ollama(host,
-                                      port,
-                                      'gemma3:4b',
-                                      seed=42,
-                                      temperature=0.1)
+                                   port,
+                                   config['output_model'],
+                                   config['seed'],
+                                   config['temperature'])
+
+        self.num_ctx = config['num_ctx']
 
         with open("./annotation/prompts/character_analysis/system_prompt.md", 'r', encoding='utf-8') as file:
             self.reasoning_system_prompt = file.read()
@@ -37,10 +40,10 @@ class CharacterAnalyzer:
                                       'Judiciary, Government, Immigration Advocates}'
         self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims}'
 
-        if self.domain == 'Gun Control':
+        if self.domain == 'guncontrol':
             with open("./annotation/prompts/character_analysis/guncontrol_role_descriptions.md", 'r', encoding='utf-8') as file:
                 self.role_descriptions = file.read()
-        elif self.domain == "Immigration":
+        elif self.domain == "immigration":
             with open("./annotation/prompts/character_analysis/immigration_role_descriptions.md", 'r', encoding='utf-8') as file:
                 self.role_descriptions = file.read()
 
@@ -48,14 +51,25 @@ class CharacterAnalyzer:
         with open(self.config["annotated_event_chains_path"], 'rb') as f:
             data = pickle.load(f)
 
-        annotated_docs = {}
+        processed_docs = self.load_existing_progress()
+        if len(processed_docs) > 0:
+            annotated_docs = processed_docs
+        else:
+            annotated_docs = {}
         total_docs = len(data)
+
+        print(f"Total documents to process: {total_docs - len(annotated_docs)}", flush=True)
 
         if sequential:
             # Sequential processing
             with tqdm(total=total_docs) as pbar:
                 processed_count = 0
                 for doc_idx, doc in data.items():
+                    if doc_idx in annotated_docs:
+                        # Skip already processed documents
+                        processed_count += 1
+                        pbar.update(1)
+                        continue
                     try:
                         processed_doc = self.process_document(doc)
                         annotated_docs[doc_idx] = processed_doc
@@ -82,6 +96,10 @@ class CharacterAnalyzer:
                     # Process documents and save at regular intervals
                     for future in concurrent.futures.as_completed(futures):
                         doc_idx = futures[future]
+                        if doc_idx in annotated_docs:
+                            processed_count += 1
+                            pbar.update(1)
+                            continue
                         try:
                             doc = future.result()
                             annotated_docs[doc_idx] = doc
@@ -103,25 +121,29 @@ class CharacterAnalyzer:
 
     def process_document(self, doc):
         # Process each document's event chains
-        # for event_chain_idx, event_chain in doc['event_chains'].items():
-        #     annotation = self.annotate(doc['text'], event_chain['chain_text'])
-        #     doc['event_chains'][event_chain_idx]['annotation'] = annotation
-        # return doc
+        article = doc['text']
+        if self.domain == 'guncontrol':
+            char_groups = self.guncontrol_char_group
+            dom = "Gun Control"
+        elif self.domain == 'immigration':
+            char_groups = self.immigration_char_group
+            dom = "Immigration"
 
-        text = """PRIMARY ' WHOLE NATION' WATCHING SESSION'S VOTE ON GUN BILL When the Florida Legislature convenes at 2 p.m. today in special session, it is expected to pass a bill to punish adults who leave their guns within reach of children. The bill is expected to become law, and if it does, Florida will be the first state to prosecute and penalize gun owners with a statute that goes beyond existing negligence laws. "The whole nation is watching Florida," said Dennis Smith, director of public education for the Center for Handgun Violence, a non-profit research group based in Washington. "It's pretty clear: The availability of guns, loaded guns, in Florida has plagued the state with accidental shootings." The recent attention given to the gun safety bill, which passed only the House in regular session, was triggered by a tragic rash of accidents involving children shooting children. Silvio Claud Pierre, 4, became the latest victim Saturday night when he died at Tampa General Hospital. He had been listed in critical condition all week after undergoing seven hours of surgery June 11, the day he shot himself at his family's home. Silvio found a .25-caliber semiautomatic handgun under a couch while his mother was in the shower. In the last three weeks, in five incidents, two other children have been accidentally killed and four have been seriously injured by other children who found and fired their parents' loaded guns."""
+        if 'event_chains' in doc:
+            for event_chain_idx, event_chain in doc['event_chains'].items():
+                annotation = self.annotate(dom, event_chain['chain_text'], char_groups, article)
+                doc['event_chains'][event_chain_idx]['annotation'] = annotation
 
-        event_chain = "Florida was plagued by accidental shootings involving children, prompting the state legislature to pass a bill holding gun owners accountable for leaving firearms accessible to minors."
-
-        annotation = self.annotate(text, event_chain)
+        # text = """PRIMARY ' WHOLE NATION' WATCHING SESSION'S VOTE ON GUN BILL When the Florida Legislature convenes at 2 p.m. today in special session, it is expected to pass a bill to punish adults who leave their guns within reach of children. The bill is expected to become law, and if it does, Florida will be the first state to prosecute and penalize gun owners with a statute that goes beyond existing negligence laws. "The whole nation is watching Florida," said Dennis Smith, director of public education for the Center for Handgun Violence, a non-profit research group based in Washington. "It's pretty clear: The availability of guns, loaded guns, in Florida has plagued the state with accidental shootings." The recent attention given to the gun safety bill, which passed only the House in regular session, was triggered by a tragic rash of accidents involving children shooting children. Silvio Claud Pierre, 4, became the latest victim Saturday night when he died at Tampa General Hospital. He had been listed in critical condition all week after undergoing seven hours of surgery June 11, the day he shot himself at his family's home. Silvio found a .25-caliber semiautomatic handgun under a couch while his mother was in the shower. In the last three weeks, in five incidents, two other children have been accidentally killed and four have been seriously injured by other children who found and fired their parents' loaded guns."""
+        #
+        # event_chain = "Florida was plagued by accidental shootings involving children, prompting the state legislature to pass a bill holding gun owners accountable for leaving firearms accessible to minors."
+        #
+        # annotation = self.annotate(text, event_chain)
 
         return doc
 
-    def save_progress(self, annotated_docs):
-        with open(self.config["annotated_event_chains_path"], 'wb') as f:
-            pickle.dump(annotated_docs, f)
-
-    def annotate(self, article, event_chain):
-        reasoning_user_prompt = (f"DOMAIN: \"{self.domain}\" \n EVENT CHAIN: \"{event_chain}\" \n CHARACTER GROUPS:"
+    def annotate(self, domain, event_chain, char_groups, article):
+        reasoning_user_prompt = (f"DOMAIN: \"{domain}\" \n EVENT CHAIN: \"{event_chain}\" \n CHARACTER GROUPS:"
                        f"{self.guncontrol_char_group} \n ROLE DESCRIPTIONS: {self.role_descriptions} \n ARTICLE: \"{article}\" \n ")
 
         max_retries = 5
@@ -129,16 +151,30 @@ class CharacterAnalyzer:
         while retry_count < max_retries:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
-                                                                     reasoning_user_prompt)
+                                                                     reasoning_user_prompt,
+                                                                     num_ctx=self.num_ctx)
                 
                 _ , json_content = self.extract_thinking_response(reasoning_model_response)
-                
-                structured_response = self.output_model.chat(self.structured_output_system_prompt,
+
+                structured_response = None
+                if domain == 'Gun Control':
+                    structured_response = self.output_model.chat(self.structured_output_system_prompt,
                                                              json_content,
-                                                             format=EventChainAnnotation.model_json_schema())
+                                                                 format=GunControlEventChainAnnotation.model_json_schema(),
+                                                                 num_ctx=self.num_ctx)
+                elif domain == 'Immigration':
+                    structured_response = self.output_model.chat(self.structured_output_system_prompt,
+                                                             json_content,
+                                                                 format=ImmigrationEventChainAnnotation.model_json_schema(),
+                                                                 num_ctx=self.num_ctx)
                 try:
-                    response = EventChainAnnotation.model_validate_json(structured_response)
-                    pass
+                    response = None
+                    if domain == 'Gun Control':
+                        response = GunControlEventChainAnnotation.model_validate_json(structured_response)
+                    elif domain == 'Immigration':
+                        response = ImmigrationEventChainAnnotation.model_validate_json(structured_response)
+                    response = response.model_dump()
+                    return response
                 except Exception as e:
                     print("Exception: " + str(e), flush=True)
                     print("Invalid response. Please try again.", flush=True)
@@ -163,12 +199,66 @@ class CharacterAnalyzer:
         else:
             response_without_think = response
         
-        # Extract JSON string from the remaining text
-        # json_pattern = r'(\{.*?\}|\[.*?\])'
-        # json_match = re.search(json_pattern, response_without_think, re.DOTALL)
-        # json_content = json_match.group(0) if json_match else None
-        
         return think_content, response_without_think
+
+    def save_progress(self, annotated_docs):
+        with open(self.config["event_chains_path"], 'wb') as f:
+            pickle.dump(annotated_docs, f)
+
+    def load_existing_progress(self):
+        """Load existing processed documents if save file exists, creating a backup first"""
+        save_path = self.config["event_chains_path"]
+
+        if os.path.exists(save_path):
+            print(f"Found existing save file: {save_path}")
+            try:
+                existing_data = self.create_backup_and_load(save_path)
+                print(f"Loaded {len(existing_data)} existing documents")
+                return existing_data
+            except Exception as e:
+                print(f"Error loading existing save file: {e}")
+                print("Starting fresh...")
+                return {}
+        else:
+            print("No existing save file found. Starting fresh...")
+            return {}
+
+    @staticmethod
+    def get_next_backup_number(base_path):
+        """Find the next available backup number for the given file path"""
+        directory = os.path.dirname(base_path)
+        base_name = os.path.splitext(os.path.basename(base_path))[0]
+        extension = os.path.splitext(base_path)[1]
+
+        backup_number = 1
+        while True:
+            backup_name = f"{base_name}_backup_{backup_number}{extension}"
+            backup_path = os.path.join(directory, backup_name)
+            if not os.path.exists(backup_path):
+                return backup_number
+            backup_number += 1
+
+    @staticmethod
+    def create_backup_and_load(save_path):
+        """Create a backup of existing save file and load the data from the original file"""
+        backup_number = self.get_next_backup_number(save_path)
+
+        directory = os.path.dirname(save_path)
+        base_name = os.path.splitext(os.path.basename(save_path))[0]
+        extension = os.path.splitext(save_path)[1]
+
+        backup_name = f"{base_name}_backup_{backup_number}{extension}"
+        backup_path = os.path.join(directory, backup_name)
+
+        # Create backup by copying the existing file
+        shutil.copy2(save_path, backup_path)
+        print(f"Created backup: {backup_path}")
+
+        # Load data from the original file
+        with open(save_path, 'rb') as f:
+            existing_data = pickle.load(f)
+        print(f"Successfully loaded data from original file: {save_path}")
+        return existing_data
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CharacterAnalyzer')
@@ -176,13 +266,13 @@ if __name__ == '__main__':
     parser.add_argument('--host', metavar='HOST')
     parser.add_argument('--port', default=9999, metavar='PORT')
     parser.add_argument('--workers', type=int, default=4, metavar='WORKERS', help='Number of worker threads')
+    parser.add_argument('--domain', metavar='DOMAIN')
     parser.add_argument('--save_interval', type=int, default=10, metavar='SAVE_INTERVAL',
                         help='Number of documents to process before saving progress')
     parser.add_argument('--sequential', action='store_true', help='Run in sequential mode instead of parallel')
     args = parser.parse_args()
+    print(vars(args))
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    annotator = CharacterAnalyzer(args.host, args.port, config,
-                                  domain='Gun Control',
-                                  model='deepseek-r1:70b-llama-distill-q4_K_M')
+    annotator = CharacterAnalyzer(args.host, args.port, config, args.domain)
     annotator.process_documents(args.workers, args.save_interval, args.sequential)

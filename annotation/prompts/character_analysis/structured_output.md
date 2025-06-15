@@ -26,6 +26,6 @@ Reformat the input into this exact JSON structure:
 2. Use only the exact character groups mentioned in the original analysis
 3. Use only "Hero", "Victim", "Threat", or "Neutral" for roles and copy as mentioned in the original analysis
 4. Use only "Pro", "Anti", or "Neutral" for stance and copy as mentioned in the original analysis
-7. Ensure valid JSON with proper quotes, commas, and brackets
+5. Ensure valid JSON with proper quotes, commas, and brackets
 
 Your only task is to parse and reformat the JSON without changing the content or reasoning.

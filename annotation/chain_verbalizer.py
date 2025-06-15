@@ -221,8 +221,9 @@ class ChainVerbalizer:
         else:
             print("No existing save file found. Starting fresh...")
             return {}
-    
-    def get_next_backup_number(self, base_path):
+
+    @staticmethod
+    def get_next_backup_number(base_path):
         """Find the next available backup number for the given file path"""
         directory = os.path.dirname(base_path)
         base_name = os.path.splitext(os.path.basename(base_path))[0]
@@ -236,9 +237,10 @@ class ChainVerbalizer:
                 return backup_number
             backup_number += 1
 
+    @staticmethod
     def create_backup_and_load(self, save_path):
         """Create a backup of existing save file and load the data from the original file"""
-        backup_number = self.get_next_backup_number(save_path)
+        backup_number = get_next_backup_number(save_path)
         
         directory = os.path.dirname(save_path)
         base_name = os.path.splitext(os.path.basename(save_path))[0]
