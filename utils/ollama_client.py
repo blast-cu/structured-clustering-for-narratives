@@ -13,7 +13,7 @@ class Ollama:
 
         ollama.pull(self.model)
 
-    def chat(self, system_prompt="", user_prompt="", format=None):
+    def chat(self, system_prompt="", user_prompt="", format=None, num_ctx=2048):
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
@@ -22,7 +22,7 @@ class Ollama:
         options: ollama.Options = {
             "seed": self.seed,
             "temperature": self.temperature,
-            "num_ctx": 12288,
+            "num_ctx": num_ctx,
             "num_predict": 2048
         }
 

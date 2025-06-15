@@ -3,6 +3,7 @@ import os
 import gc
 import pickle
 import re
+import shutil
 import concurrent.futures
 
 from pyhocon import ConfigFactory
@@ -27,6 +28,8 @@ class ChainVerbalizer:
                                     config['output_model'],
                                     config['seed'],
                                     config['temperature'])
+        
+        self.num_ctx = config['num_ctx']
 
         with open("./annotation/prompts/chain_verbalization/system_prompt.md", 'r', encoding='utf-8') as file:
             self.reasoning_system_prompt = file.read()
@@ -151,29 +154,6 @@ class ChainVerbalizer:
 
         return doc
 
-    def load_existing_progress(self):
-        """Load existing processed documents if save file exists"""
-        save_path = self.config["event_chains_path"]
-
-        if os.path.exists(save_path):
-            print(f"Found existing save file: {save_path}")
-            try:
-                with open(save_path, 'rb') as f:
-                    existing_data = pickle.load(f)
-                print(f"Loaded {len(existing_data)} existing documents")
-                return existing_data
-            except Exception as e:
-                print(f"Error loading existing save file: {e}")
-                print("Starting fresh...")
-                return {}
-        else:
-            print("No existing save file found. Starting fresh...")
-            return {}
-
-    def save_progress(self, annotated_docs):
-        with open(self.config["event_chains_path"], 'wb') as f:
-            pickle.dump(annotated_docs, f)
-
     def annotate(self, domain, event_chain, char_groups, article):
         reasoning_user_prompt = f"DOMAIN: {domain} EVENT CHAIN: {event_chain} CHARACTER GROUPS: {char_groups} ARTICLE: {article}"
 
@@ -182,13 +162,15 @@ class ChainVerbalizer:
         while retry_count < max_retries:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
-                                                                     reasoning_user_prompt)
+                                                                     reasoning_user_prompt,
+                                                                     num_ctx=self.num_ctx)
 
                 _, json_content = self.extract_thinking_response(reasoning_model_response)
 
                 structured_response = self.output_model.chat(self.structured_output_system_prompt,
                                                              json_content,
-                                                             format=EventChainSentence.model_json_schema())
+                                                             format=EventChainSentence.model_json_schema(),
+                                                             num_ctx=self.num_ctx)
                 try:
                     response = EventChainSentence.model_validate_json(structured_response)
                     response = response.model_dump()
@@ -217,6 +199,63 @@ class ChainVerbalizer:
         else:
             response_without_think = response
         return think_content, response_without_think
+    
+    def save_progress(self, annotated_docs):
+        with open(self.config["event_chains_path"], 'wb') as f:
+            pickle.dump(annotated_docs, f)
+    
+    def load_existing_progress(self):
+        """Load existing processed documents if save file exists, creating a backup first"""
+        save_path = self.config["event_chains_path"]
+
+        if os.path.exists(save_path):
+            print(f"Found existing save file: {save_path}")
+            try:
+                existing_data = self.create_backup_and_load(save_path)
+                print(f"Loaded {len(existing_data)} existing documents")
+                return existing_data
+            except Exception as e:
+                print(f"Error loading existing save file: {e}")
+                print("Starting fresh...")
+                return {}
+        else:
+            print("No existing save file found. Starting fresh...")
+            return {}
+    
+    def get_next_backup_number(self, base_path):
+        """Find the next available backup number for the given file path"""
+        directory = os.path.dirname(base_path)
+        base_name = os.path.splitext(os.path.basename(base_path))[0]
+        extension = os.path.splitext(base_path)[1]
+        
+        backup_number = 1
+        while True:
+            backup_name = f"{base_name}_backup_{backup_number}{extension}"
+            backup_path = os.path.join(directory, backup_name)
+            if not os.path.exists(backup_path):
+                return backup_number
+            backup_number += 1
+
+    def create_backup_and_load(self, save_path):
+        """Create a backup of existing save file and load the data from the original file"""
+        backup_number = self.get_next_backup_number(save_path)
+        
+        directory = os.path.dirname(save_path)
+        base_name = os.path.splitext(os.path.basename(save_path))[0]
+        extension = os.path.splitext(save_path)[1]
+        
+        backup_name = f"{base_name}_backup_{backup_number}{extension}"
+        backup_path = os.path.join(directory, backup_name)
+        
+        # Create backup by copying the existing file
+        shutil.copy2(save_path, backup_path)
+        print(f"Created backup: {backup_path}")
+        
+        # Load data from the original file
+        with open(save_path, 'rb') as f:
+            existing_data = pickle.load(f)
+        print(f"Successfully loaded data from original file: {save_path}")
+        return existing_data
 
 
 if __name__ == '__main__':
@@ -230,6 +269,7 @@ if __name__ == '__main__':
                         help='Number of documents to process before saving progress')
     parser.add_argument('--sequential', action='store_true', help='Run in sequential mode instead of parallel')
     args = parser.parse_args()
+    print(vars(args))
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     annotator = ChainVerbalizer(args.host, args.port, config, args.domain)

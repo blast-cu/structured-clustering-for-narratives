@@ -8,9 +8,9 @@
 #SBATCH --time=7-00:00:00
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:3
 #SBATCH --mem=50G
-#SBATCH --job-name=verbalize_chains
+#SBATCH --job-name=pi_verbalize_chains
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc
@@ -24,13 +24,17 @@ export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 echo "Starting up Ollama server"
-nohup ollama serve > ./data/mfc/guncontrol/ollama_log.txt 2>&1 &
+OLLAMA_PORT=9999
+OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
+nohup ollama serve > ./data/partisanship/immigration/ollama_log.txt 2>&1 &
 
 echo "Waiting for Ollama server to start"
 sleep 1m
 
-host_ip=$(hostname -i)
+HOST_IP=$(hostname -i)
+
+echo "Generating chain verbalizations for partisanship_immigration."
 
 # python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50
 
-python3 ./annotation/chain_verbalizer.py -c "mfc_guncontrol" --host $host_ip --workers 4 --domain "guncontrol" --save_interval 25
+python3 ./annotation/chain_verbalizer.py -c "partisanship_immigration" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 4 --domain "immigration" --save_interval 25
