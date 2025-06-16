@@ -1,6 +1,6 @@
 #!/bin/bash
 
-##SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blanca-curc-gpu
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --nodes=1
@@ -10,7 +10,7 @@
 #SBATCH --partition=blanca-clearlab1
 #SBATCH --gres=gpu:h100:1
 #SBATCH --mem=50G
-#SBATCH --job-name=mg_verbalize_chains
+#SBATCH --job-name=pi_verbalize_chains
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc
@@ -23,18 +23,21 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
+source="partisanship" # mfc or partisanship
+domain="immigration" # immigration or guncontrol
+
 echo "Starting up Ollama server"
-OLLAMA_PORT=9990
+OLLAMA_PORT=9980
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
-nohup ollama serve > ./data/mfc/guncontrol/ollama_log.txt 2>&1 &
+nohup ollama serve > ./data/${source}/${domain}/ollama_log.txt 2>&1 &
 
 echo "Waiting for Ollama server to start"
 sleep 1m
 
 HOST_IP=$(hostname -i)
 
-echo "Generating chain verbalizations for mfc_guncontrol."
+echo "Generating chain verbalizations for ${source}_${domain}."
 
 # python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50
 
-python3 ./annotation/chain_verbalizer.py -c "mfc_guncontrol" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 4 --domain "guncontrol" --save_interval 25
+python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 4 --domain "${domain}" --save_interval 5

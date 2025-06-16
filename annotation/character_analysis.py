@@ -48,7 +48,7 @@ class CharacterAnalyzer:
                 self.role_descriptions = file.read()
 
     def process_documents(self, num_workers, save_interval, sequential=False):
-        with open(self.config["annotated_event_chains_path"], 'rb') as f:
+        with open(self.config["relations_path"], 'rb') as f:
             data = pickle.load(f)
 
         processed_docs = self.load_existing_progress()
@@ -56,50 +56,57 @@ class CharacterAnalyzer:
             annotated_docs = processed_docs
         else:
             annotated_docs = {}
+        
         total_docs = len(data)
+        existing_docs = len(annotated_docs)
+        docs_to_process = total_docs - existing_docs
 
-        print(f"Total documents to process: {total_docs - len(annotated_docs)}", flush=True)
+        print(f"Total documents: {total_docs}", flush=True)
+        print(f"Existing processed documents: {existing_docs}", flush=True)
+        print(f"Documents to process: {docs_to_process}", flush=True)
 
         if sequential:
-            # Sequential processing
-            with tqdm(total=total_docs) as pbar:
+            # Sequential processing - only process unprocessed documents
+            with tqdm(total=docs_to_process, desc="Processing documents") as pbar:
                 processed_count = 0
                 for doc_idx, doc in data.items():
                     if doc_idx in annotated_docs:
-                        # Skip already processed documents
-                        processed_count += 1
-                        pbar.update(1)
+                        # Skip already processed documents - don't update progress bar
                         continue
                     try:
                         processed_doc = self.process_document(doc)
                         annotated_docs[doc_idx] = processed_doc
                         processed_count += 1
-
+                        
                         # Update the progress bar
                         pbar.update(1)
-
-                        # # Save annotated_docs at regular intervals
+                        
+                        # Save annotated_docs at regular intervals
                         if processed_count % save_interval == 0:
                             self.save_progress(annotated_docs)
                             print(f"Progress saved after processing {processed_count} documents.", flush=True)
-
+                            
                     except Exception as e:
                         print(f"Error processing document {doc_idx}: {e}", flush=True)
+                        pbar.update(1)  # Still update progress bar even if there's an error
         else:
-            # Parallel processing using ThreadPoolExecutor
-            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = {executor.submit(self.process_document, doc): doc_idx for doc_idx, doc in data.items()}
+            # Parallel processing - only submit futures for unprocessed documents
+            unprocessed_items = {doc_idx: doc for doc_idx, doc in data.items() 
+                            if doc_idx not in annotated_docs}
+            
+            if not unprocessed_items:
+                print("All documents already processed!", flush=True)
+                return
 
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+                futures = {executor.submit(self.process_document, doc): doc_idx for doc_idx, doc in unprocessed_items.items()}
                 # Initialize tqdm progress bar to track document processing
-                with tqdm(total=total_docs) as pbar:
+                with tqdm(total=len(unprocessed_items), desc="Processing documents") as pbar:
                     processed_count = 0
+                    
                     # Process documents and save at regular intervals
                     for future in concurrent.futures.as_completed(futures):
                         doc_idx = futures[future]
-                        if doc_idx in annotated_docs:
-                            processed_count += 1
-                            pbar.update(1)
-                            continue
                         try:
                             doc = future.result()
                             annotated_docs[doc_idx] = doc
@@ -115,9 +122,11 @@ class CharacterAnalyzer:
 
                         except Exception as e:
                             print(f"Error processing document {doc_idx}: {e}", flush=True)
+                            pbar.update(1)  # Still update progress bar even if there's an error
 
         # Final save at the end, in case it wasn't saved during the last interval
         self.save_progress(annotated_docs)
+        print(f"Processing complete. Final save completed.", flush=True)
 
     def process_document(self, doc):
         # Process each document's event chains
@@ -202,12 +211,12 @@ class CharacterAnalyzer:
         return think_content, response_without_think
 
     def save_progress(self, annotated_docs):
-        with open(self.config["event_chains_path"], 'wb') as f:
+        with open(self.config["char_event_chains_path"], 'wb') as f:
             pickle.dump(annotated_docs, f)
-
+    
     def load_existing_progress(self):
         """Load existing processed documents if save file exists, creating a backup first"""
-        save_path = self.config["event_chains_path"]
+        save_path = self.config["char_event_chains_path"]
 
         if os.path.exists(save_path):
             print(f"Found existing save file: {save_path}")
@@ -225,35 +234,44 @@ class CharacterAnalyzer:
 
     @staticmethod
     def get_next_backup_number(base_path):
-        """Find the next available backup number for the given file path"""
+        """Find the next highest backup number for the given file path"""
         directory = os.path.dirname(base_path)
         base_name = os.path.splitext(os.path.basename(base_path))[0]
         extension = os.path.splitext(base_path)[1]
-
-        backup_number = 1
-        while True:
-            backup_name = f"{base_name}_backup_{backup_number}{extension}"
-            backup_path = os.path.join(directory, backup_name)
-            if not os.path.exists(backup_path):
-                return backup_number
-            backup_number += 1
+        
+        # Find all existing backup files and extract their numbers
+        backup_numbers = []
+        
+        if os.path.exists(directory):
+            for filename in os.listdir(directory):
+                # Check if the file matches the backup pattern
+                backup_pattern = f"{base_name}_backup_(\d+){re.escape(extension)}"
+                match = re.match(backup_pattern, filename)
+                if match:
+                    backup_numbers.append(int(match.group(1)))
+        
+        # Return the next highest number
+        if backup_numbers:
+            return max(backup_numbers) + 1
+        else:
+            return 1
 
     @staticmethod
     def create_backup_and_load(save_path):
         """Create a backup of existing save file and load the data from the original file"""
-        backup_number = self.get_next_backup_number(save_path)
-
+        backup_number = CharacterAnalyzer.get_next_backup_number(save_path)
+        
         directory = os.path.dirname(save_path)
         base_name = os.path.splitext(os.path.basename(save_path))[0]
         extension = os.path.splitext(save_path)[1]
-
+        
         backup_name = f"{base_name}_backup_{backup_number}{extension}"
         backup_path = os.path.join(directory, backup_name)
-
+        
         # Create backup by copying the existing file
         shutil.copy2(save_path, backup_path)
         print(f"Created backup: {backup_path}")
-
+        
         # Load data from the original file
         with open(save_path, 'rb') as f:
             existing_data = pickle.load(f)
