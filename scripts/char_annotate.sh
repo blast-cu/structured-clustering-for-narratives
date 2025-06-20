@@ -1,0 +1,42 @@
+#!/bin/bash
+
+#SBATCH --account=blanca-curc-gpu
+#SBATCH --mail-user=roda9210@colorado.edu
+#SBATCH --mail-type=FAIL
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=10
+#SBATCH --time=7-00:00:00
+#SBATCH --qos=blanca-curc-gpu
+#SBATCH --partition=blanca-curc-gpu
+#SBATCH --gres=gpu:3
+#SBATCH --mem=50G
+#SBATCH --job-name=mg_char_annotate
+#SBATCH --output=logs/data.%j.log
+
+source ~/.bashrc
+
+module load anaconda
+conda activate event
+
+mkdir -p "$SLURM_SCRATCH/cache/HF"
+
+export HF_HOME="$SLURM_SCRATCH/cache/HF"
+export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
+
+source="mfc" # mfc or partisanship
+domain="guncontrol" # immigration or guncontrol
+
+echo "Starting up Ollama server"
+OLLAMA_PORT=9999
+OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
+# OLLAMA_NUM_PARALLEL=4
+nohup ollama serve > ./data/${source}/${domain}/ollama_log.txt 2>&1 &
+
+echo "Waiting for Ollama server to start"
+sleep 1m
+
+HOST_IP=$(hostname -i)
+
+echo "Generating chain verbalizations for ${source}_${domain}."
+
+python3 ./annotation/character_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --save_interval 10

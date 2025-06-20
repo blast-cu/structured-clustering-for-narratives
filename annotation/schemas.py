@@ -34,32 +34,32 @@ class Stance(str, Enum):
     NEUTRAL = "Neutral"
 
 class GunControlCharacter(BaseModel):
+    entity: str = Field(..., description="Exact entity mentioned in the event chain")
     character_group: GunControlCharacterGroup
-    specific_entity: str = Field(..., description="Exact entity mentioned in the event chain")
     role: Role
-    justification: str = Field(..., description="Brief explanation with textual evidence")
+    # justification: str = Field(..., description="Brief explanation with textual evidence")
 
 class ImmigrationCharacter(BaseModel):
-    character_group: GunControlCharacterGroup
-    specific_entity: str = Field(..., description="Exact entity mentioned in the event chain")
+    entity: str = Field(..., description="Exact entity mentioned in the event chain")
+    character_group: ImmigrationCharacterGroup
     role: Role
-    justification: str = Field(..., description="Brief explanation with textual evidence")
+    # justification: str = Field(..., description="Brief explanation with textual evidence")
 
 class GunControlEventChainAnnotation(BaseModel):
     characters: List[GunControlCharacter]
     stance: Stance
-    stance_justification: str = Field(
-        ...,
-        description="Brief explanation with textual evidence while focusing mainly on the event chain"
-    )
+    # stance_justification: str = Field(
+    #     ...,
+    #     description="Brief explanation with textual evidence while focusing mainly on the event chain"
+    # )
 
 class ImmigrationEventChainAnnotation(BaseModel):
     characters: List[ImmigrationCharacter]
     stance: Stance
-    stance_justification: str = Field(
-        ...,
-        description="Brief explanation with textual evidence while focusing mainly on the event chain"
-    )
+    # stance_justification: str = Field(
+    #     ...,
+    #     description="Brief explanation with textual evidence while focusing mainly on the event chain"
+    # )
 
 class EventChainSentence(BaseModel):
     sentence: str = Field(..., description="The sentence expanding the event chain")

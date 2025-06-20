@@ -13,22 +13,33 @@ class Ollama:
 
         ollama.pull(self.model)
 
-    def chat(self, system_prompt="", user_prompt="", format=None, num_ctx=2048):
+    def chat(self, system_prompt="", user_prompt="", think=False, repeat_penalty=False, format=None, num_ctx=2048):
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt}
         ]
 
-        options: ollama.Options = {
-            "seed": self.seed,
-            "temperature": self.temperature,
-            "num_ctx": num_ctx,
-            "num_predict": 2048
-        }
+        if repeat_penalty:
+            options: ollama.Options = {
+                "seed": self.seed,
+                "temperature": self.temperature,
+                "num_ctx": num_ctx,
+                "repeat_penalty": 1,
+                "num_predict": 2048
+            }
+        else:
+            options: ollama.Options = {
+                "seed": self.seed,
+                "temperature": self.temperature,
+                "num_ctx": num_ctx,
+                "num_predict": 2048
+            }
 
         response = self.client.chat(self.model,
                                     messages=messages,
                                     format=format,
+                                    think=think,
+                                    keep_alive=-1,
                                     options=options)
 
         return response['message']['content']

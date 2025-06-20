@@ -23,8 +23,8 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
-source="mfc"
-domain="guncontrol"
+source="partisanship" # mfc or partisanship
+domain="immigration" # immigration or guncontrol
 
 echo "Starting up Ollama server"
 OLLAMA_PORT=9999
@@ -40,4 +40,6 @@ echo "Generating chain verbalizations for ${source}_${domain}."
 
 # python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50
 
-python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 4 --domain "${domain}" --save_interval 25
+# python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 4 --domain "${domain}" --save_interval 25
+
+python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --excerpt 4 --save_interval 3

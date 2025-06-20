@@ -26,7 +26,7 @@ Each generation task will include:
 - **EVENT CHAIN**: A representation of two causally connected events in the format ((VERB_1, OBJECT_1), CAUSAL, 
   (VERB_2, OBJECT_2))
 - **CHARACTER GROUPS**: List of predefined character categories relevant to the domain
-- **TEXT EXCERPT**: A relevant portion of the news article containing the events and sufficient surrounding context
+- **ARTICLE EXCERPT**: A relevant portion of the news article containing the events and sufficient surrounding context
 
 ## Output Format
 Provide your generated sentence in this JSON structure:

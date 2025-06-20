@@ -13,7 +13,7 @@ from utils.ollama_client import Ollama
 
 
 class CharacterAnalyzer:
-    def __init__(self, host, port, config, domain):
+    def __init__(self, host, port, config, domain, use_excerpt=False):
         self.config = config
 
         self.reasoning_model = Ollama(host,
@@ -30,8 +30,12 @@ class CharacterAnalyzer:
 
         self.num_ctx = config['num_ctx']
 
-        with open("./annotation/prompts/character_analysis/system_prompt.md", 'r', encoding='utf-8') as file:
-            self.reasoning_system_prompt = file.read()
+        if use_excerpt:
+            with open("./annotation/prompts/character_analysis/excerpt_system_prompt.md", 'r', encoding='utf-8') as file:
+                self.reasoning_system_prompt = file.read()
+        else:
+            with open("./annotation/prompts/character_analysis/system_prompt.md", 'r', encoding='utf-8') as file:
+                self.reasoning_system_prompt = file.read()
         with open("./annotation/prompts/character_analysis/structured_output.md", 'r', encoding='utf-8') as file:
             self.structured_output_system_prompt = file.read()
 
@@ -47,10 +51,10 @@ class CharacterAnalyzer:
             with open("./annotation/prompts/character_analysis/immigration_role_descriptions.md", 'r', encoding='utf-8') as file:
                 self.role_descriptions = file.read()
 
-    def process_documents(self, num_workers, save_interval, sequential=False):
-        with open(self.config["relations_path"], 'rb') as f:
+    def process_documents(self, num_workers, save_interval, use_excerpt=False, sequential=False):
+        with open(self.config["event_chains_path"], 'rb') as f:
             data = pickle.load(f)
-
+        
         processed_docs = self.load_existing_progress()
         if len(processed_docs) > 0:
             annotated_docs = processed_docs
@@ -74,7 +78,7 @@ class CharacterAnalyzer:
                         # Skip already processed documents - don't update progress bar
                         continue
                     try:
-                        processed_doc = self.process_document(doc)
+                        processed_doc = self.process_document(doc, use_excerpt)
                         annotated_docs[doc_idx] = processed_doc
                         processed_count += 1
                         
@@ -99,7 +103,7 @@ class CharacterAnalyzer:
                 return
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = {executor.submit(self.process_document, doc): doc_idx for doc_idx, doc in unprocessed_items.items()}
+                futures = {executor.submit(self.process_document, doc, use_excerpt): doc_idx for doc_idx, doc in unprocessed_items.items()}
                 # Initialize tqdm progress bar to track document processing
                 with tqdm(total=len(unprocessed_items), desc="Processing documents") as pbar:
                     processed_count = 0
@@ -128,32 +132,28 @@ class CharacterAnalyzer:
         self.save_progress(annotated_docs)
         print(f"Processing complete. Final save completed.", flush=True)
 
-    def process_document(self, doc):
-        # Process each document's event chains
-        article = doc['text']
+    def process_document(self, doc, use_excerpt=False):
         if self.domain == 'guncontrol':
             char_groups = self.guncontrol_char_group
-            dom = "Gun Control"
+            domain = "Gun Control"
         elif self.domain == 'immigration':
             char_groups = self.immigration_char_group
-            dom = "Immigration"
+            domain = "Immigration"
 
         if 'event_chains' in doc:
             for event_chain_idx, event_chain in doc['event_chains'].items():
-                annotation = self.annotate(dom, event_chain['chain_text'], char_groups, article)
+                if use_excerpt and 'excerpt' in event_chain:
+                    article = event_chain['excerpt']
+                else:
+                    article = doc['text']
+                annotation = self.annotate(domain, event_chain['chain_text'], char_groups, article)
                 doc['event_chains'][event_chain_idx]['annotation'] = annotation
-
-        # text = """PRIMARY ' WHOLE NATION' WATCHING SESSION'S VOTE ON GUN BILL When the Florida Legislature convenes at 2 p.m. today in special session, it is expected to pass a bill to punish adults who leave their guns within reach of children. The bill is expected to become law, and if it does, Florida will be the first state to prosecute and penalize gun owners with a statute that goes beyond existing negligence laws. "The whole nation is watching Florida," said Dennis Smith, director of public education for the Center for Handgun Violence, a non-profit research group based in Washington. "It's pretty clear: The availability of guns, loaded guns, in Florida has plagued the state with accidental shootings." The recent attention given to the gun safety bill, which passed only the House in regular session, was triggered by a tragic rash of accidents involving children shooting children. Silvio Claud Pierre, 4, became the latest victim Saturday night when he died at Tampa General Hospital. He had been listed in critical condition all week after undergoing seven hours of surgery June 11, the day he shot himself at his family's home. Silvio found a .25-caliber semiautomatic handgun under a couch while his mother was in the shower. In the last three weeks, in five incidents, two other children have been accidentally killed and four have been seriously injured by other children who found and fired their parents' loaded guns."""
-        #
-        # event_chain = "Florida was plagued by accidental shootings involving children, prompting the state legislature to pass a bill holding gun owners accountable for leaving firearms accessible to minors."
-        #
-        # annotation = self.annotate(text, event_chain)
 
         return doc
 
     def annotate(self, domain, event_chain, char_groups, article):
         reasoning_user_prompt = (f"DOMAIN: \"{domain}\" \n EVENT CHAIN: \"{event_chain}\" \n CHARACTER GROUPS:"
-                       f"{self.guncontrol_char_group} \n ROLE DESCRIPTIONS: {self.role_descriptions} \n ARTICLE: \"{article}\" \n ")
+                       f"{char_groups} \n ROLE DESCRIPTIONS: {self.role_descriptions} \n ARTICLE: \"{article}\" \n ")
 
         max_retries = 5
         retry_count = 0
@@ -161,19 +161,20 @@ class CharacterAnalyzer:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
                                                                      reasoning_user_prompt,
+                                                                     think=True,
                                                                      num_ctx=self.num_ctx)
-                
-                _ , json_content = self.extract_thinking_response(reasoning_model_response)
-
-                structured_response = None
                 if domain == 'Gun Control':
-                    structured_response = self.output_model.chat(self.structured_output_system_prompt,
-                                                             json_content,
+                    structured_response = self.reasoning_model.chat(self.structured_output_system_prompt,
+                                                                 reasoning_model_response,
+                                                                 think=False,
+                                                                 repeat_penalty=True,
                                                                  format=GunControlEventChainAnnotation.model_json_schema(),
                                                                  num_ctx=self.num_ctx)
                 elif domain == 'Immigration':
                     structured_response = self.output_model.chat(self.structured_output_system_prompt,
-                                                             json_content,
+                                                                 reasoning_model_response,
+                                                                 think=False,
+                                                                 repeat_penalty=True,
                                                                  format=ImmigrationEventChainAnnotation.model_json_schema(),
                                                                  num_ctx=self.num_ctx)
                 try:
@@ -193,22 +194,6 @@ class CharacterAnalyzer:
                 print("Ollama Error. Please try again.", flush=True)
                 retry_count += 1
         return None
-
-    @staticmethod
-    def extract_thinking_response(response):
-        # Extract content within <think> tags
-        think_pattern = r'<think>(.*?)</think>'
-        think_match = re.search(think_pattern, response, re.DOTALL)
-        think_content = think_match.group(1) if think_match else None
-        
-        # Remove the entire <think> section from the text to prevent extracting JSON from within it
-        if think_match:
-            full_think_section = think_match.group(0)  # This includes the <think> tags
-            response_without_think = response.replace(full_think_section, '')
-        else:
-            response_without_think = response
-        
-        return think_content, response_without_think
 
     def save_progress(self, annotated_docs):
         with open(self.config["char_event_chains_path"], 'wb') as f:
@@ -285,6 +270,7 @@ if __name__ == '__main__':
     parser.add_argument('--port', default=9999, metavar='PORT')
     parser.add_argument('--workers', type=int, default=4, metavar='WORKERS', help='Number of worker threads')
     parser.add_argument('--domain', metavar='DOMAIN')
+    parser.add_argument('--use_excerpt', action='store_true')
     parser.add_argument('--save_interval', type=int, default=10, metavar='SAVE_INTERVAL',
                         help='Number of documents to process before saving progress')
     parser.add_argument('--sequential', action='store_true', help='Run in sequential mode instead of parallel')
@@ -292,5 +278,5 @@ if __name__ == '__main__':
     print(vars(args))
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    annotator = CharacterAnalyzer(args.host, args.port, config, args.domain)
-    annotator.process_documents(args.workers, args.save_interval, args.sequential)
+    annotator = CharacterAnalyzer(args.host, args.port, config, args.domain, args.use_excerpt)
+    annotator.process_documents(args.workers, args.save_interval, args.use_excerpt, args.sequential)

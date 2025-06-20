@@ -13,24 +13,26 @@ from schemas import EventChainSentence
 from utils.ollama_client import Ollama
 
 class ChainVerbalizer:
-    def __init__(self, host, port, config, domain, use_excerpt=False):
+    def __init__(self, host, port, config, domain, excerpt=0):
         self.config = config
 
+        print("Reasoning model: " + self.config['reasoning_model'], flush=True)
         self.reasoning_model = Ollama(host,
                                         port,
-                                        config['reasoning_model'],
-                                        config['seed'],
-                                        config['temperature'])
+                                        self.config['reasoning_model'],
+                                        self.config['seed'],
+                                        self.config['temperature'])
 
+        print("Output model: " + self.config['output_model'], flush=True)
         self.output_model = Ollama(host,
                                     port,
-                                    config['output_model'],
-                                    config['seed'],
-                                    config['temperature'])
+                                    self.config['output_model'],
+                                    self.config['seed'],
+                                    self.config['temperature'])
         
-        self.num_ctx = config['num_ctx']
+        self.num_ctx = self.config['num_ctx']
 
-        if use_excerpt:
+        if excerpt > 0:
             with (open("./annotation/prompts/chain_verbalization/excerpt_system_prompt.md", 'r', encoding='utf-8') as
                   file):
                 self.reasoning_system_prompt = file.read()
@@ -48,11 +50,11 @@ class ChainVerbalizer:
 
 
 
-    def process_documents(self, num_workers, save_interval, use_excerpt=False, sequential=False):
+    def process_documents(self, num_workers, save_interval, source, excerpt=0, sequential=False):
         with open(self.config["relations_path"], 'rb') as f:
             data = pickle.load(f)
 
-        if use_excerpt:
+        if excerpt > 0:
             data = self.generate_event_2_sentence_map(data)
 
         processed_docs = self.load_existing_progress()
@@ -78,11 +80,10 @@ class ChainVerbalizer:
                         # Skip already processed documents - don't update progress bar
                         continue
                     try:
-                        processed_doc = self.process_document(doc, use_excerpt)
+                        processed_doc = self.process_document(doc, source, excerpt)
                         annotated_docs[doc_idx] = processed_doc
                         processed_count += 1
                         
-                        # Update the progress bar
                         pbar.update(1)
                         
                         # Save annotated_docs at regular intervals
@@ -103,9 +104,9 @@ class ChainVerbalizer:
                 return
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = {executor.submit(self.process_document, doc): doc_idx for doc_idx, doc in unprocessed_items.items()}
+                futures = {executor.submit(self.process_document, doc, source, excerpt): doc_idx for doc_idx, doc in unprocessed_items.items()}
                 # Initialize tqdm progress bar to track document processing
-                with tqdm(total=len(unprocessed_items), desc="Processing documents") as pbar:
+                with tqdm(total=len(unprocessed_items)) as pbar:
                     processed_count = 0
                     
                     # Process documents and save at regular intervals
@@ -116,7 +117,6 @@ class ChainVerbalizer:
                             annotated_docs[doc_idx] = doc
                             processed_count += 1
 
-                            # Update the progress bar
                             pbar.update(1)
 
                             # Save annotated_docs at regular intervals
@@ -132,7 +132,8 @@ class ChainVerbalizer:
         self.save_progress(annotated_docs)
         print(f"Processing complete. Final save completed.", flush=True)
 
-    def process_document(self, doc, use_excerpt=False):
+    def process_document(self, doc, source, excerpt=0):
+        article = ''
         if self.domain == 'guncontrol':
             char_groups = self.guncontrol_char_group
         elif self.domain == 'immigration':
@@ -148,47 +149,38 @@ class ChainVerbalizer:
         event_chains = {}
         event_chain_idx = 0
         if 'relations' in doc.keys():
-            for key in doc['relations']:
+            doc_relations = dict(sorted(doc['relations'].items(), key=lambda x: x[0][0]))
+            for key in doc_relations:
                 event_chain = {}
-                if doc['relations'][key][1] == 'causal':
+                if doc_relations[key][1] == 'causal':
                     event_1 = event_map[key[0]]
-                    relation = doc['relations'][key][1].upper()
+                    relation = doc_relations[key][1].upper()
                     event_2 = event_map[key[1]]
                     event_chain[
                         'event_chain'] = f"(({event_1[0]}, {event_1[1]}), {relation}, ({event_2[0]}, {event_2[1]}))"
 
-                    article = ''
-                    if use_excerpt:
-                        sent_ids = list(doc['sentences'].keys())
-                        sent_lb = int(sent_ids[0])
-                        sent_ub = int(sent_ids[-1])
-
-                        event_1_sent_id = doc['event_2_sentence_map'][key[0]]
-                        event_2_sent_id = doc['event_2_sentence_map'][key[1]]
-
-                        if event_1_sent_id - sent_lb < 4:
-                            excerpt_lb = sent_lb
-                        else:
-                            excerpt_lb = event_1_sent_id - 4
-
-                        if sent_ub - event_2_sent_id < 4:
-                            excerpt_ub = sent_ub
-                        else:
-                            excerpt_ub = event_2_sent_id + 4
+                    if source == 'partisanship' and excerpt > 0:
+                        excerpt_lb, excerpt_ub = self.get_excerpt(doc, excerpt, key)
 
                         for idx in range(excerpt_lb, excerpt_ub + 1):
                             article += doc['sentences'][str(idx)]['text'] + ' '
+                            event_chain['excerpt'] = article.strip()
                     else:
                         article = doc['text']
+                        event_chain['excerpt'] = None
 
                     event_chain['chain_text'] = self.annotate(self.domain,
                                                               event_chain['event_chain'],
                                                               char_groups,
-                                                              article.strip())
+                                                              article.strip(),
+                                                              excerpt)
 
                 if event_chain:
                     event_chains[event_chain_idx] = event_chain
                     event_chain_idx += 1
+
+                if source == 'partisanship' and len(event_chains) >= self.config['event_chain_num_threshold']:
+                    break
 
         doc['event_chains'] = event_chains
 
@@ -197,8 +189,12 @@ class ChainVerbalizer:
 
         return doc
 
-    def annotate(self, domain, event_chain, char_groups, article):
-        reasoning_user_prompt = f"DOMAIN: {domain} EVENT CHAIN: {event_chain} CHARACTER GROUPS: {char_groups} ARTICLE: {article}"
+    def annotate(self, domain, event_chain, char_groups, article, excerpt=0):
+        if excerpt > 0:
+            reasoning_user_prompt = f"DOMAIN: {domain} EVENT CHAIN: {event_chain} CHARACTER GROUPS: {char_groups} " \
+                                    f"ARTICLE EXCERPT: {article}"
+        else:
+            reasoning_user_prompt = f"DOMAIN: {domain} EVENT CHAIN: {event_chain} CHARACTER GROUPS: {char_groups} ARTICLE: {article}"
 
         max_retries = 5
         retry_count = 0
@@ -206,12 +202,15 @@ class ChainVerbalizer:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
                                                                      reasoning_user_prompt,
+                                                                     think=True,
                                                                      num_ctx=self.num_ctx)
 
                 _, json_content = self.extract_thinking_response(reasoning_model_response)
 
                 structured_response = self.output_model.chat(self.structured_output_system_prompt,
                                                              json_content,
+                                                             think=False,
+                                                             repeat_penalty=True,
                                                              format=EventChainSentence.model_json_schema(),
                                                              num_ctx=self.num_ctx)
                 try:
@@ -242,6 +241,79 @@ class ChainVerbalizer:
         else:
             response_without_think = response
         return think_content, response_without_think
+
+    @staticmethod
+    def generate_event_2_sentence_map(data):
+        """Generate a mapping of event IDs to sentences for each document"""
+        for doc_idx, doc in data.items():
+            event_2_sentence_map = {}
+            for sentence_idx, sentence in doc['sentences'].items():
+                for event in sentence['events']:
+                    event_id = int(event[0])
+                    event_2_sentence_map[event_id] = sentence_idx
+            doc['event_2_sentence_map'] = event_2_sentence_map
+        return data
+
+    @staticmethod
+    def get_excerpt(doc, excerpt, key):
+        sent_ids = list(doc['sentences'].keys())
+        sent_lb = int(sent_ids[0])
+        sent_ub = int(sent_ids[-1])
+
+        event_1_sent_id = int(doc['event_2_sentence_map'][key[0]])
+        event_2_sent_id = int(doc['event_2_sentence_map'][key[1]])
+        
+        # Ensure event_1 comes before event_2 (swap if necessary)
+        if event_1_sent_id > event_2_sent_id:
+            event_1_sent_id, event_2_sent_id = event_2_sent_id, event_1_sent_id
+
+        # Calculate target excerpt parameters
+        target_before = excerpt  # target sentences before event_1
+        target_after = excerpt   # target sentences after event_2
+        
+        # Calculate the span between events (inclusive)
+        event_span = event_2_sent_id - event_1_sent_id + 1
+        
+        # Calculate available sentences on each side
+        available_before = event_1_sent_id - sent_lb
+        available_after = sent_ub - event_2_sent_id
+        
+        # Determine how many sentences we can actually get on each side
+        actual_before = min(target_before, available_before)
+        actual_after = min(target_after, available_after)
+        
+        # Calculate shortfalls
+        shortfall_before = target_before - actual_before
+        shortfall_after = target_after - actual_after
+        
+        # Compensate for shortfall on one side by adding to the other side
+        if shortfall_before > 0:
+            # We couldn't get enough sentences before event_1, try to get more after event_2
+            additional_after = min(shortfall_before, available_after - actual_after)
+            actual_after += additional_after
+        
+        if shortfall_after > 0:
+            # We couldn't get enough sentences after event_2, try to get more before event_1
+            additional_before = min(shortfall_after, available_before - actual_before)
+            actual_before += additional_before
+        
+        # Set final excerpt bounds
+        excerpt_lb = event_1_sent_id - actual_before
+        excerpt_ub = event_2_sent_id + actual_after
+
+        actual_excerpt_length = (excerpt_ub - excerpt_lb + 1)
+        target_excerpt_length = (2 * excerpt) + 3
+
+        if actual_excerpt_length > target_excerpt_length:
+            raise Exception(
+                f"Excerpt length {actual_excerpt_length} exceeds target length {target_excerpt_length}. "
+                f"Excerpt bounds: {excerpt_lb} to {excerpt_ub}, "
+                f"Event span: {event_span}, "
+                f"Available before: {available_before}, Available after: {available_after}, "
+                f"Actual before: {actual_before}, Actual after: {actual_after}"
+            )
+
+        return excerpt_lb, excerpt_ub
     
     def save_progress(self, annotated_docs):
         with open(self.config["event_chains_path"], 'wb') as f:
@@ -264,18 +336,6 @@ class ChainVerbalizer:
         else:
             print("No existing save file found. Starting fresh...")
             return {}
-
-    @staticmethod
-    def generate_event_2_sentence_map(data):
-        """Generate a mapping of event IDs to sentences for each document"""
-        for doc_idx, doc in data.items():
-            event_2_sentence_map = {}
-            for sentence_idx, sentence in doc['sentences'].items():
-                for event in sentence['events']:
-                    event_id = int(event[0])
-                    event_2_sentence_map[event_id] = sentence_idx
-            doc['event_2_sentence_map'] = event_2_sentence_map
-        return data
 
     @staticmethod
     def get_next_backup_number(base_path):
@@ -330,8 +390,9 @@ if __name__ == '__main__':
     parser.add_argument('--host', metavar='HOST')
     parser.add_argument('--port', default=9999, metavar='PORT')
     parser.add_argument('--workers', type=int, default=4, metavar='WORKERS', help='Number of worker threads')
+    parser.add_argument('--source', metavar='SOURCE')
     parser.add_argument('--domain', metavar='DOMAIN')
-    parser.add_argument('--use_excerpt', action='store_true', help='Use excerpt instead of full article')
+    parser.add_argument('--excerpt', type=int, default=0, metavar='EXCERPT', help='Use excerpt instead of full article')
     parser.add_argument('--save_interval', type=int, default=5, metavar='SAVE_INTERVAL',
                         help='Number of documents to process before saving progress')
     parser.add_argument('--sequential', action='store_true', help='Run in sequential mode instead of parallel')
@@ -339,5 +400,5 @@ if __name__ == '__main__':
     print(vars(args))
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    annotator = ChainVerbalizer(args.host, args.port, config, args.domain, args.use_excerpt)
-    annotator.process_documents(args.workers, args.save_interval, args.use_excerpt, args.sequential)
+    annotator = ChainVerbalizer(args.host, args.port, config, args.domain, args.excerpt)
+    annotator.process_documents(args.workers, args.save_interval, args.source, args.excerpt, args.sequential)
