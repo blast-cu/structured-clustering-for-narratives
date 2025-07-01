@@ -9,8 +9,8 @@
 #SBATCH --qos=preemptable
 #SBATCH --partition=blanca-clearlab1
 #SBATCH --gres=gpu:h100:1
-#SBATCH --mem=50G
-#SBATCH --job-name=mg_char_annotate
+#SBATCH --mem=20G
+#SBATCH --job-name=pg_char_annotate
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc
@@ -23,11 +23,11 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
-source="mfc" # mfc or partisanship
+source="partisanship" # mfc or partisanship
 domain="guncontrol" # immigration or guncontrol
 
 echo "Starting up Ollama server"
-OLLAMA_PORT=9940
+OLLAMA_PORT=9920
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
 # OLLAMA_NUM_PARALLEL=4
 nohup ollama serve > ./data/${source}/${domain}/ollama_log.txt 2>&1 &
@@ -37,6 +37,6 @@ sleep 1m
 
 HOST_IP=$(hostname -i)
 
-echo "Generating chain verbalizations for ${source}_${domain}."
+echo "Generating character annotations for ${source}_${domain}."
 
-python3 ./annotation/character_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --save_interval 10
+python3 ./annotation/character_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --use_excerpt --save_interval 3

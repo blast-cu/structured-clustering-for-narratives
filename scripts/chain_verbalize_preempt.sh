@@ -9,8 +9,8 @@
 #SBATCH --qos=preemptable
 #SBATCH --partition=blanca-clearlab1
 #SBATCH --gres=gpu:h100:1
-#SBATCH --mem=50G
-#SBATCH --job-name=pg_verbalize_chains
+#SBATCH --mem=20G
+#SBATCH --job-name=pi_verbalize_chains
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc
@@ -27,7 +27,7 @@ source="partisanship" # mfc or partisanship
 domain="immigration" # immigration or guncontrol
 
 echo "Starting up Ollama server"
-OLLAMA_PORT=9970
+OLLAMA_PORT=9980
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
 nohup ollama serve > ./data/${source}/${domain}/ollama_log.txt 2>&1 &
 

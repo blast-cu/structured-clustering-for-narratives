@@ -10,6 +10,7 @@ class GunControlCharacterGroup(str, Enum):
     JUDICIARY = "Judiciary"
     GOVERNMENT = "Government"
     GUN_CRIME_VICTIMS = "Gun Crime Victims"
+    OTHER = "Other"
 
 class ImmigrationCharacterGroup(str, Enum):
     POLITICIANS = "Politicians"
@@ -21,6 +22,7 @@ class ImmigrationCharacterGroup(str, Enum):
     REFUGEES = "Refugees"
     ASYLUM_SEEKERS = "Asylum Seekers"
     WORKERS = "Workers"
+    OTHER = "Other"
 
 class Role(str, Enum):
     HERO = "Hero"
@@ -37,29 +39,19 @@ class GunControlCharacter(BaseModel):
     entity: str = Field(..., description="Exact entity mentioned in the event chain")
     character_group: GunControlCharacterGroup
     role: Role
-    # justification: str = Field(..., description="Brief explanation with textual evidence")
 
 class ImmigrationCharacter(BaseModel):
     entity: str = Field(..., description="Exact entity mentioned in the event chain")
     character_group: ImmigrationCharacterGroup
     role: Role
-    # justification: str = Field(..., description="Brief explanation with textual evidence")
 
 class GunControlEventChainAnnotation(BaseModel):
     characters: List[GunControlCharacter]
     stance: Stance
-    # stance_justification: str = Field(
-    #     ...,
-    #     description="Brief explanation with textual evidence while focusing mainly on the event chain"
-    # )
 
 class ImmigrationEventChainAnnotation(BaseModel):
     characters: List[ImmigrationCharacter]
     stance: Stance
-    # stance_justification: str = Field(
-    #     ...,
-    #     description="Brief explanation with textual evidence while focusing mainly on the event chain"
-    # )
 
 class EventChainSentence(BaseModel):
     sentence: str = Field(..., description="The sentence expanding the event chain")

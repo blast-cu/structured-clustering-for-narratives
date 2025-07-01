@@ -17,12 +17,14 @@ IMPORTANT: Analyze ONLY characters and entities explicitly mentioned in the even
 
 - Only include entities explicitly mentioned in the event chain
 - Map the identified entities to the most appropriate character group
+- If no character group from the provided list adequately represents the entity, assign it to 'Other'. This includes entities that are tangentially related but don't fit well into any specific predefined category, as well as entities from completely different domains or contexts.
 - Use the exact wording from the event chain when listing specific entities
 - Places and locations such as countries, states, cities, streets etc. are NOT valid character entities - ignore them
 
 ### Role Classification
 
 - Base classification solely on how the entity is portrayed in the event chain and surrounding context
+- Use textual evidence to justify your classification
 - When an entity fits multiple roles, select the most prominent one
 
 ### Stance Determination
@@ -55,5 +57,3 @@ Provide your analysis in this JSON format:
   "stance": "[Pro/Anti/Neutral]"
 }
 ```
-
-Only generate valid JSON, do not generate any other text.

@@ -41,8 +41,8 @@ class CharacterAnalyzer:
 
         self.domain = domain
         self.immigration_char_group = '{Immigrants, Refugees, Asylum Seekers, Workers, Politicians, Law Enforcement, ' \
-                                      'Judiciary, Government, Immigration Advocates}'
-        self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims}'
+                                      'Judiciary, Government, Immigration Advocates, Other}'
+        self.guncontrol_char_group = '{Politicans, Gun Control Advocates, Gun Right Advocates, Law Enforcement, Judiciary, Government, Gun Crime Victims, Other}'
 
         if self.domain == 'guncontrol':
             with open("./annotation/prompts/character_analysis/guncontrol_role_descriptions.md", 'r', encoding='utf-8') as file:

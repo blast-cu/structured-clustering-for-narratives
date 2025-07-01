@@ -180,12 +180,16 @@ class ChainVerbalizer:
                     event_chain_idx += 1
 
                 if source == 'partisanship' and len(event_chains) >= self.config['event_chain_num_threshold']:
+                    print(f"Reached event chain threshold of {self.config['event_chain_num_threshold']}. Stopping further processing.", flush=True)
                     break
 
         doc['event_chains'] = event_chains
 
-        del article, event_map, event_chains
-        gc.collect()
+        try:
+            del article, event_map, event_chains
+            gc.collect()
+        except Exception as e:
+            print(f"Error during garbage collection: {e}", flush=True)
 
         return doc
 
