@@ -195,3 +195,4 @@ ollama_log*.txt
 !/data/mfc/guncontrol/.gitkeep
 !/data/partisanship/immigration/.gitkeep
 !/data/partisanship/guncontrol/.gitkeep
+/annotation/explore.py
