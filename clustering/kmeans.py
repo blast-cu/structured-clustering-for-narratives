@@ -36,6 +36,7 @@ class KMeansClustering:
         with open(config["clusters_path"] + f"clusters_{self.n_clusters}_0.0.pickle", 'wb') as f:
             pickle.dump({
                 "number_cluster": self.n_clusters,
+                "embeddings": X,
                 "labels": cluster_assignment,
                 "cluster_centers": cluster_centroids
             }, f, protocol=pickle.HIGHEST_PROTOCOL)
