@@ -763,7 +763,8 @@ class SBERTConstrainedClusteringTrainer:
         print("Fine-tuning complete", flush=True)
 
     def train(self,
-              data: Dict,
+              sentences: List,
+              constraints: List[Tuple[int, int]],
               kmeans_params: Dict = None,
               existing_metrics: List[Dict] = None) -> Dict:
         """
@@ -789,9 +790,9 @@ class SBERTConstrainedClusteringTrainer:
             }
 
         # Initialize embeddings and constraints
-        embeddings = data['embs'].copy()
-        constraints = data['constraints']
-        sentences = data['chains']
+        embeddings = self.sbert_model.encode(
+            sentences, batch_size=32, show_progress_bar=True, normalize_embeddings=True
+        )
 
         # Initialize metrics
         iteration_metrics = [] if existing_metrics is None else existing_metrics.copy()
@@ -1005,8 +1006,22 @@ if __name__ == '__main__':
     print("Loading data for clustering...", flush=True)
 
     # Load data
-    with open(config["cluster_embs_path"], 'rb') as f:
+    # with open(config["cluster_embs_path"], 'rb') as f:
+    #     data = pickle.load(f)
+
+    with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
+
+    constraints = {}
+    with open(config["constraints_path"], "rb") as f:
+        while True:
+            try:
+                batch = pickle.load(f)
+                # Convert batch (list of tuples) to dict entries
+                for k1, k2 in batch:
+                    constraints[(k1, k2)] = 1
+            except EOFError:
+                break
 
     framework = SBERTConstrainedClusteringTrainer(n_clusters=args.k,
                                                   w_cl=args.w,
@@ -1016,6 +1031,6 @@ if __name__ == '__main__':
                                                   memory_decay_factor=1.0,
                                                   save_dir="./data/immigration/")
 
-    best_model = framework.train(data)
+    best_model = framework.train(data["chain_sents"], constraints)
 
     framework.save(config, best_model['model'], best_model['embs'])

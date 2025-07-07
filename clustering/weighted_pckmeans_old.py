@@ -35,8 +35,7 @@ class ConstrainedKMeans:
                  early_stopping_tol: int = 10,
                  random_state: Optional[int] = None,
                  constraint_graph: Dict[int, Set[int]] = None,
-                 sorted_constraints: List[Tuple[int, int]] = None,
-                 top_k: Optional[int] = None):
+                 sorted_constraints: List[Tuple[int, int]] = None):
         """
         Initialize the Pairwise Constrained KMeans algorithm
 
@@ -48,9 +47,6 @@ class ConstrainedKMeans:
             tol: Convergence tolerance for centroid movement
             early_stopping_tol: Number of iterations with no improvement before early stopping
             random_state: Random seed
-            constraint_graph: Pre-computed constraint graph
-            sorted_constraints: Pre-computed sorted constraints
-            top_k: If specified, only apply constraints to the top k% of items in each cluster
         """
 
         self.n_clusters = n_clusters
@@ -62,7 +58,6 @@ class ConstrainedKMeans:
         self.random_state = random_state
         self.constraint_graph = constraint_graph
         self.sorted_constraints = sorted_constraints
-        self.top_k = top_k
 
         # Attributes that will be set during fitting
         self.cluster_centers_: Optional[npt.NDArray[np.float64]] = None
@@ -83,32 +78,6 @@ class ConstrainedKMeans:
             np.sum((X - center) ** 2, axis=1)
             for center in self.cluster_centers_
         ])
-
-    def _get_top_k_items(self, assignments: npt.NDArray[np.int64], distances: npt.NDArray[np.float64]) -> Set[int]:
-        """Get the top k% of items in each cluster based on proximity to cluster centers."""
-        
-        top_k_items = set()
-        
-        for cluster_id in range(self.n_clusters):
-            cluster_mask = assignments == cluster_id
-            cluster_indices = np.where(cluster_mask)[0]
-            
-            if len(cluster_indices) == 0:
-                continue
-                
-            # Get distances to cluster center for items in this cluster
-            cluster_distances = distances[cluster_id, cluster_indices]
-            
-            # Calculate number of top k% items
-            k_count = max(1, int(len(cluster_indices) * self.top_k / 100))
-            
-            # Get indices of top k% items (closest to cluster center)
-            top_k_indices_in_cluster = np.argsort(cluster_distances)[:k_count]
-            top_k_global_indices = cluster_indices[top_k_indices_in_cluster]
-            
-            top_k_items.update(top_k_global_indices)
-        
-        return top_k_items
 
     @staticmethod
     def _build_constraint_graph(n_samples: int,
@@ -133,29 +102,26 @@ class ConstrainedKMeans:
 
         return constraint_graph, sorted_constraints
 
-    def _find_violations(self, assignments: npt.NDArray[np.int64],
-                       sorted_constraints: List[Tuple[int, int]],
-                       top_k_items: Optional[Set[int]] = None) -> List[Tuple[int, int]]:
-        """Find all violated constraints, optionally filtered by top_k items"""
+    @staticmethod
+    def _find_violations(assignments: npt.NDArray[np.int64],
+                       sorted_constraints: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+        """Find all violated constraints"""
 
         violations = []
 
         for i, j in sorted_constraints:
             if assignments[i] == assignments[j]:
-                # Only check constraints if both items are in top k% (if top_k is specified)
-                if top_k_items is None or (i in top_k_items and j in top_k_items):
-                    violations.append((i, j))
+                violations.append((i, j))
 
         return violations
 
     def _count_violations(self,
                          assignments: npt.NDArray[np.int64],
                          constraint_graph: Dict[int, Set[int]],
-                         sorted_constraints: List[Tuple[int, int]],
-                         top_k_items: Optional[Set[int]] = None) -> Tuple[int, List[Tuple[int, int]]]:
+                         sorted_constraints: List[Tuple[int, int]]) -> Tuple[int, List[Tuple[int, int]]]:
         """Count number of constraint violations and return list of violated constraints"""
 
-        violations = self._find_violations(assignments, sorted_constraints, top_k_items)
+        violations = self._find_violations(assignments, sorted_constraints)
         return len(violations), violations
 
     def _compute_metrics(self,
@@ -172,13 +138,8 @@ class ConstrainedKMeans:
 
         # Only check violations if constraints have weight
         if self.w_cl > 0:
-            # Get top k% items if top_k is specified
-            top_k_items = None
-            if self.top_k is not None:
-                top_k_items = self._get_top_k_items(assignments, distances)
-            
             num_violations, violated_constraints = self._count_violations(
-                assignments, constraint_graph, sorted_constraints, top_k_items
+                assignments, constraint_graph, sorted_constraints
             )
         else:
             num_violations = 0
@@ -207,24 +168,14 @@ class ConstrainedKMeans:
             # If no constraint weight, assign all points at once
             return np.argmin(distances, axis=0)
 
-        # First pass: assign all points without constraints to get initial assignments
-        initial_assignments = np.argmin(distances, axis=0)
-        
-        # Get top k% items if top_k is specified
-        top_k_items = None
-        if self.top_k is not None:
-            top_k_items = self._get_top_k_items(initial_assignments, distances)
-
         # Assign points one by one
         for i in range(n_samples):
             cluster_costs = distances[:, i].copy()
 
-            # Add penalty for constraint violations only if both points are in top_k
+            # Add penalty for constraint violations
             for j in constraint_graph[i]:
                 if j < i:  # Only consider already assigned points
-                    # Apply constraint penalty only if both items are in top k% (or no top_k filtering)
-                    if top_k_items is None or (i in top_k_items and j in top_k_items):
-                        cluster_costs[assignments[j]] += self.w_cl
+                    cluster_costs[assignments[j]] += self.w_cl
 
             assignments[i] = np.argmin(cluster_costs)
 
@@ -450,15 +401,12 @@ if __name__ == '__main__':
     parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
     parser.add_argument('-i', metavar='MAX_ITER', default=100, type=int, help='maximum number of iterations')
     parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
-    parser.add_argument('--top_k', metavar='TOP_K', default=None, type=int, help='only apply constraints to top k% of items in each cluster')
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     print("N_CLUSTERS: " + str(args.k), flush=True)
     print("W_CL: " + str(args.w), flush=True)
-    if args.top_k is not None:
-        print("TOP_K: " + str(args.top_k), flush=True)
 
     print("Loading data for clustering...", flush=True)
 
@@ -480,8 +428,7 @@ if __name__ == '__main__':
         max_iter=args.i,
         tol=1e-4,
         early_stopping_tol=10,
-        random_state=config['seed'],
-        top_k=args.top_k
+        random_state=config['seed']
     )
 
     # Fit the model
