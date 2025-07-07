@@ -50,21 +50,23 @@ def generate_data(annotated_chains, config, sample_size=50):
             'events_present': "",
             'entities_present': "",
             'correct_verbalization': "",
+            'no_hallucinations': "",
             'verbalization_score': "",
             'char_annotation': json.dumps(item['sampled_event_chain']['annotation'], indent=2),
             'all_entities': "",
             'correct_char_groups': "",
             'correct_roles': "",
             'correct_stance': "",
+            'no_hallucinations': "",
             'char_score': ""
         }
         out_dict.append(row)
 
     with open(config['chain_char_annotations_path'], 'w', newline='') as csvfile:
         fieldnames = ['doc_text', 'event_chain', 'chain_text', 'events_present', 
-                     'entities_present', 'correct_verbalization', 'verbalization_score',
+                     'entities_present', 'correct_verbalization', 'no_hallucinations', 'verbalization_score',
                      'char_annotation', 'all_entities', 'correct_char_groups', 
-                     'correct_roles', 'correct_stance', 'char_score']
+                     'correct_roles', 'correct_stance', 'no_hallucinations', 'char_score']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter='\t')
         writer.writeheader()
         writer.writerows(out_dict)

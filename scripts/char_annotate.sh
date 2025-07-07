@@ -1,16 +1,16 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blanca-blast-lecs
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=FAIL
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=20
-#SBATCH --time=4-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --gres=gpu:3
-#SBATCH --mem=20G
-#SBATCH --job-name=mg_char_annotate
+#SBATCH --ntasks-per-node=10
+#SBATCH --time=7-00:00:00
+#SBATCH --qos=blanca-blast-lecs
+#SBATCH --partition=blanca-blast-lecs
+#SBATCH --gres=gpu:h100_7g.80gb
+#SBATCH --mem=40G
+#SBATCH --job-name=pg_char_annotate
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc
@@ -23,7 +23,7 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
-source="mfc" # mfc or partisanship
+source="partisanship" # mfc or partisanship
 domain="guncontrol" # immigration or guncontrol
 
 echo "Starting up Ollama server"
@@ -40,4 +40,4 @@ HOST_IP=$(hostname -i)
 
 echo "Generating character annotations for ${source}_${domain}."
 
-python3 ./annotation/character_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --save_interval 10
+python3 ./annotation/character_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --use_excerpt --save_interval 3

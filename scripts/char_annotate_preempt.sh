@@ -9,8 +9,8 @@
 #SBATCH --qos=preemptable
 #SBATCH --partition=blanca-clearlab1
 #SBATCH --gres=gpu:h100:1
-#SBATCH --mem=20G
-#SBATCH --job-name=pg_char_annotate
+#SBATCH --mem=40G
+#SBATCH --job-name=pi_char_annotate
 #SBATCH --output=logs/data.%j.log
 
 source ~/.bashrc
@@ -24,10 +24,10 @@ export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 source="partisanship" # mfc or partisanship
-domain="guncontrol" # immigration or guncontrol
+domain="immigration" # immigration or guncontrol
 
 echo "Starting up Ollama server"
-OLLAMA_PORT=9920
+OLLAMA_PORT=9980
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
 # OLLAMA_NUM_PARALLEL=4
 nohup ollama serve > ./data/${source}/${domain}/ollama_log.txt 2>&1 &
