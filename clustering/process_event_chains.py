@@ -58,7 +58,7 @@ def compute_constraints_generator(processed_chains, chain_group_roles, batch_siz
                        desc="Processing constraints"):
         # Check if both have same character groups with same roles
         if chain_group_roles[k1] != chain_group_roles[k2]:
-            if k1 > k2:
+            if int(k1) > int(k2):
                 batch['sorted_constraints'].append((int(k2), int(k1)))
             else:
                 batch['sorted_constraints'].append((int(k1), int(k2)))
@@ -68,7 +68,10 @@ def compute_constraints_generator(processed_chains, chain_group_roles, batch_siz
 
             if len(batch['sorted_constraints']) >= batch_size:
                 yield batch
-                batch = []
+                batch = batch = {
+                    'sorted_constraints': [],
+                    'constraint_graph': {},
+                }
     
     # Yield remaining constraints
     if batch:

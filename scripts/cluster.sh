@@ -21,7 +21,7 @@ conda activate event
 mkdir -p "$SLURM_SCRATCH/cache/HF"
 
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
-export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
+export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 # Processing annotated chains
 # python3 ./annotation/process_annotated_chains.py -c "immigration"
@@ -30,7 +30,9 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 # python3 ./clustering/weighted_pckmeans.py -c "immigration" -k $1 -w $2
 
-python3 ./clustering/finetuned_pckmeans.py -c "immigration" -k 1000 -w 0.001
+python3 ./clustering/process_event_chains.py -c "mfc_immigration"
+
+# python3 ./clustering/finetuned_pckmeans.py -c "immigration" -k 1000 -w 0.001
 
 # python3 ./clustering/kmeans.py -c "immigration" -k $1
 
