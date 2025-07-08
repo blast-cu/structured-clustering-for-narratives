@@ -104,11 +104,15 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fi
         # Use shelve to store constraints as a persistent dictionary
         with shelve.open(constraints_file, 'c') as constraints_db:
             for batch in compute_constraints_generator(processed_chains, chain_group_roles):
-                # Store each constraint as a key-value pair in shelve
+                # Create a batch dictionary to update shelve efficiently
+                batch_dict = {}
                 for k1, k2 in batch:
                     # Use repr to create a string key that preserves the tuple structure
                     key = repr((k1, k2))
-                    constraints_db[key] = 1
+                    batch_dict[key] = 1
+                
+                # Batch update the shelve database
+                constraints_db.update(batch_dict)
                 processed_combinations += len(batch)
                 if processed_combinations % 1000000 == 0:  # Print every 1M constraints
                     print(f"Processed {processed_combinations} combinations so far...")
