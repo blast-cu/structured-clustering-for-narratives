@@ -9,6 +9,7 @@ import torch
 from datasets import Dataset
 from numpy import ndarray
 from pyhocon import ConfigFactory
+from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
 from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss
 from tqdm import tqdm
@@ -217,7 +218,7 @@ class SBERTConstrainedClusteringTrainer:
             
             # Anchor selection strategy
             if self.sample_near_centroids:
-                print("Sampling anchor points near cluster centroids...")
+                print("Sampling anchor points near cluster centroids...", flush=True)
                 anchor_indices = self._sample_points_near_centroids(
                     embeddings, 
                     model.cluster_centers_, 
@@ -227,17 +228,17 @@ class SBERTConstrainedClusteringTrainer:
                     # No maximum points per cluster - let the threshold determine the count
                     max_points_per_cluster=None
                 )
-                print(f"Sampled {len(anchor_indices)} anchor points near centroids")
+                print(f"Sampled {len(anchor_indices)} anchor points near centroids", flush=True)
             elif self.use_all_anchors:
-                print(f"Using all {len(embeddings)} data points as anchors...")
+                print(f"Using all {len(embeddings)} data points as anchors...", flush=True)
                 anchor_indices = list(range(len(embeddings)))
             else:
                 # Sample a subset of points to use as anchors
                 sample_size = min(self.max_anchors, len(embeddings))
                 anchor_indices = random.sample(range(len(embeddings)), sample_size)
-                print(f"Sampled {len(anchor_indices)} random anchor points...")
+                print(f"Sampled {len(anchor_indices)} random anchor points...", flush=True)
             
-            print("Generating training examples for each anchor point...")
+            print("Generating training examples for each anchor point...", flush=True)
             for anchor_idx in tqdm(anchor_indices):
                 anchor_cluster = labels[anchor_idx]
                 
@@ -766,8 +767,9 @@ class SBERTConstrainedClusteringTrainer:
         print("Fine-tuning complete", flush=True)
 
     def train(self,
-              sentences: List,
               config,
+              sentences: List,
+              initialization_strategy: str = "",
               kmeans_params: Dict = None,
               existing_metrics: List[Dict] = None) -> Dict:
         """
@@ -822,21 +824,50 @@ class SBERTConstrainedClusteringTrainer:
             print(f"\n=== EM Iteration {iteration + 1}/{self.max_iterations} ===\n", flush=True)
 
             # Determine initialization strategy
-            if self.progressive_init:
-                if iteration < 2:
-                    # Complete reinitialization
-                    initialization_strategy = "from_scratch"
-                elif iteration < self.max_iterations - 2:
-                    # Hybrid approach
-                    initialization_strategy = "hybrid"
+            if initialization_strategy == "":
+                if self.progressive_init:
+                    if iteration < 2:
+                        # Complete reinitialization
+                        initialization_strategy = "from_scratch"
+                    elif iteration < self.max_iterations - 2:
+                        # Hybrid approach
+                        initialization_strategy = "hybrid"
+                    else:
+                        # Warm start with adjustments
+                        initialization_strategy = "warm_start"
                 else:
-                    # Warm start with adjustments
-                    initialization_strategy = "warm_start"
-            else:
-                # Always use from_scratch strategy
-                initialization_strategy = "from_scratch"
+                    # Always use from_scratch strategy
+                    initialization_strategy = "from_scratch"
 
             print(f"Using initialization strategy: {initialization_strategy}",flush=True)
+
+
+            # Apply the appropriate initialization strategy
+            init_centroids = None
+
+            if initialization_strategy == "scikit_kmeans":
+                # Use scikit-learn KMeans for initialization
+                print("Using scikit-learn KMeans for initialization...", flush=True)
+                sk_kmeans = KMeans(n_clusters=self.n_clusters, random_state=config["seed"], init='k-means++', n_init=10)
+                sk_kmeans.fit(embeddings)
+                init_centroids = sk_kmeans.cluster_centers_
+            elif initialization_strategy == "from_scratch" or iteration == 0:
+                # Standard initialization from scratch
+                print("Using standard initialization from scratch...", flush=True)
+                init_centroids = None  # Let the model handle initialization
+            elif initialization_strategy == "hybrid" and previous_pckmeans_model is not None:
+                # Hybrid reinitialization
+                print("Using hybrid initialization with previous model...", flush=True)
+                init_centroids = self.hybrid_initialization(
+                    previous_pckmeans_model, embeddings, self.sorted_constraints_path, reinit_fraction=0.3
+                )
+            elif previous_pckmeans_model is not None and previous_embeddings is not None:
+                # Warm start with adjustments
+                print("Using warm start with adjusted centroids...", flush=True)
+                init_centroids = self.adjust_centroids(
+                    previous_pckmeans_model.cluster_centers_, previous_embeddings, embeddings,
+                    percentage=self.centroid_adjustment_percentage
+                )
 
             # Create initializer
             initializer = KMeansPlusPlusInit(
@@ -844,29 +875,12 @@ class SBERTConstrainedClusteringTrainer:
                 w_cl=self.w_cl
             )
 
-            # Apply the appropriate initialization strategy
-            init_centroids = None
-
-            if initialization_strategy == "from_scratch" or iteration == 0:
-                # Standard initialization from scratch
-                init_centroids = None  # Let the model handle initialization
-            elif initialization_strategy == "hybrid" and previous_pckmeans_model is not None:
-                # Hybrid reinitialization
-                init_centroids = self.hybrid_initialization(
-                    previous_pckmeans_model, embeddings, self.sorted_constraints_path, reinit_fraction=0.3
-                )
-            elif previous_pckmeans_model is not None and previous_embeddings is not None:
-                # Warm start with adjustments
-                init_centroids = self.adjust_centroids(
-                    previous_pckmeans_model.cluster_centers_, previous_embeddings, embeddings,
-                    percentage=self.centroid_adjustment_percentage
-                )
-
             # Create KMeans model
             pckmeans_model = ConstrainedKMeans(
                 n_clusters=self.n_clusters,
                 initializer=initializer,
                 w_cl=self.w_cl,
+                top_k=25,
                 # constraint_graph=self.constraint_graph,
                 # sorted_constraints=self.sorted_constraints,
                 **kmeans_params
@@ -877,6 +891,7 @@ class SBERTConstrainedClusteringTrainer:
 
             # Set initial centroids if we have them
             if init_centroids is not None:
+                print("Using custom initialization for centroids...", flush=True)
                 pckmeans_model.cluster_centers_ = init_centroids
                 # Fit with custom initialization
                 pckmeans_model.fit(embeddings,
@@ -1047,6 +1062,8 @@ if __name__ == '__main__':
                                                   memory_decay_factor=1.0,
                                                   save_dir=config["clusters_path"]+"/finetuned_pckmeans")
 
-    best_model = framework.train(data["chain_sents"], config)
+    best_model = framework.train(config,
+                                 data["chain_sents"], 
+                                 initialization_strategy="scikit_kmeans")
 
     framework.save(config, best_model['model'], best_model['embs'])

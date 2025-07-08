@@ -213,6 +213,7 @@ class KMeansPlusPlusInit(BaseInitializer):
         all_distances = self._compute_distances_to_centers(X, centers[:1], X_norm)
         
         # Select remaining centers
+        print("Selecting remaining cluster centers for initialization...", flush=True)
         for k in tqdm(range(1, n_clusters)):
             # Get minimum distances to existing centers
             min_distances = self._compute_min_distances(all_distances)

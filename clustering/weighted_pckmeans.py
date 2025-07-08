@@ -31,7 +31,7 @@ class ConstrainedKMeans:
 
     def __init__(self,
                  n_clusters: int,
-                 initializer: BaseInitializer,
+                 initializer: BaseInitializer = None,
                  w_cl: float = 1.0,
                  max_iter: int = 100,
                  tol: float = 1e-4,
@@ -322,6 +322,7 @@ class ConstrainedKMeans:
         iterations_without_improvement = 0
 
         # Main clustering loop
+        print("Starting clustering iterations...", flush=True)
         for iteration in tqdm(range(self.max_iter)):
             # Get new assignments
             new_assignments = self._assign_points(X)
@@ -491,7 +492,7 @@ if __name__ == '__main__':
 
     # Fit the model
     model.fit(X=embeddings,
-              sorted_constraints_path=config["constraints_flat_path"],
-              constraint_graph_path=config["constraints_graph_path"])
+              sorted_constraints_path=config["constraint_flat_path"],
+              constraint_graph_path=config["constraint_graph_path"])
 
     model.save(config)
