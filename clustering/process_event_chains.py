@@ -57,21 +57,27 @@ def compute_constraints_generator(processed_chains, chain_group_roles, batch_siz
                        total=total_combinations, 
                        desc="Processing constraints"):
         # Check if both have same character groups with same roles
-        if chain_group_roles[k1] != chain_group_roles[k2]:
-            if int(k1) > int(k2):
-                batch['sorted_constraints'].append((int(k2), int(k1)))
-            else:
-                batch['sorted_constraints'].append((int(k1), int(k2)))
+        # if chain_group_roles[k1] != chain_group_roles[k2]:
+        # Check if both have same character groups (keys)
+        if set(chain_group_roles[k1].keys()) == set(chain_group_roles[k2].keys()):
+            # Same groups - now check if any values differ
+            values_differ = any(chain_group_roles[k1][group] != chain_group_roles[k2][group]
+                                for group in chain_group_roles[k1].keys())
+            if values_differ:
+                if int(k1) > int(k2):
+                    batch['sorted_constraints'].append((int(k2), int(k1)))
+                else:
+                    batch['sorted_constraints'].append((int(k1), int(k2)))
 
-            batch['constraint_graph'].setdefault(int(k1), set()).add(int(k2))
-            batch['constraint_graph'].setdefault(int(k2), set()).add(int(k1))
+                batch['constraint_graph'].setdefault(int(k1), set()).add(int(k2))
+                batch['constraint_graph'].setdefault(int(k2), set()).add(int(k1))
 
-            if len(batch['sorted_constraints']) >= batch_size:
-                yield batch
-                batch = batch = {
-                    'sorted_constraints': [],
-                    'constraint_graph': {},
-                }
+                if len(batch['sorted_constraints']) >= batch_size:
+                    yield batch
+                    batch = batch = {
+                        'sorted_constraints': [],
+                        'constraint_graph': {},
+                    }
     
     # Yield remaining constraints
     if batch:
