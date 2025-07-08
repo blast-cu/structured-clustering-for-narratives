@@ -1020,6 +1020,8 @@ if __name__ == '__main__':
                 # Convert batch (list of tuples) to dict entries
                 for k1, k2 in batch:
                     constraints[(k1, k2)] = 1
+                # Delete batch from memory after processing
+                del batch
             except EOFError:
                 break
 
