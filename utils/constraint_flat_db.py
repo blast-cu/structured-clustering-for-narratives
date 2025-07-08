@@ -4,7 +4,7 @@ import struct
 
 class ConstraintFlatDB:
     def __init__(self, db_path='./constraint_flat_db'):
-        self.env = lmdb.open(db_path, map_size=10 * 1024 ** 3)
+        self.env = lmdb.open(db_path, map_size=100 * 1024 ** 3)
 
     def _make_key(self, dict_key, set_member):
         """Convert (dict_key, set_member) to bytes"""

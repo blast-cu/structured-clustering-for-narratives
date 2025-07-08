@@ -6,7 +6,7 @@ import struct
 
 class ConstraintGraphDB:
     def __init__(self, db_path='./constraint_graph_db'):
-        self.env = lmdb.open(db_path, map_size=10 * 1024 ** 3)
+        self.env = lmdb.open(db_path, map_size=100 * 1024 ** 3)
 
     def _key_to_bytes(self, dict_key):
         return struct.pack('i', dict_key)

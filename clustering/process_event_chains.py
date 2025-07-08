@@ -65,7 +65,7 @@ def compute_constraints_generator(processed_chains, chain_group_roles, batch_siz
             batch['constraint_graph'].setdefault(int(k1), set()).add(int(k2))
             batch['constraint_graph'].setdefault(int(k2), set()).add(int(k1))
 
-            if len(batch['constraint_graph']) >= batch_size:
+            if len(batch['sorted_constraints']) >= batch_size:
                 yield batch
                 batch = []
     
@@ -116,7 +116,7 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fl
 
         for batch in compute_constraints_generator(processed_chains, chain_group_roles):
             # Create a batch dictionary to update shelve efficiently
-            print(f"Writing batch of size {len(batch)} to disk...", flush=True)
+            print(f"Writing batch of size {len(batch['sorted_constraints'])} to disk...", flush=True)
             constraints_flat_db.add_tuples(batch["sorted_constraints"])
             constraints_graph_db.update_sets(batch["constraint_graph"])
             processed_combinations += len(batch)
