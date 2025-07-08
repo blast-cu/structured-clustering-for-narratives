@@ -42,7 +42,10 @@ def process_event_chains(data):
 
 def compute_constraints_generator(processed_chains, chain_group_roles, batch_size=1000000):
     """Generator that yields constraint batches for memory efficiency"""
-    batch:List[Tuple[int, int]] = []
+    batch = {
+        'sorted_constraints': [],
+        'constraint_graph': {},
+    }
     
     # Calculate total combinations
     n = len(processed_chains)
@@ -54,8 +57,15 @@ def compute_constraints_generator(processed_chains, chain_group_roles, batch_siz
                        desc="Processing constraints"):
         # Check if both have same character groups with same roles
         if chain_group_roles[k1] != chain_group_roles[k2]:
-            batch.append((k1, k2))
-            if len(batch) >= batch_size:
+            if k1 > k2:
+                batch['sorted_constraints'].append((int(k2), int(k1)))
+            else:
+                batch['sorted_constraints'].append((int(k1), int(k2)))
+
+            batch['constraint_graph'].setdefault(int(k1), set()).add(int(k2))
+            batch['constraint_graph'].setdefault(int(k2), set()).add(int(k1))
+
+            if len(batch['constraint_graph']) >= batch_size:
                 yield batch
                 batch = []
     
@@ -64,7 +74,7 @@ def compute_constraints_generator(processed_chains, chain_group_roles, batch_siz
         yield batch
 
 
-def compute_constraints(processed_chains, normalize_groups=False, constraints_file=None):
+def compute_constraints(processed_chains, normalize_groups=False, constraints_flat_path=None, constraints_graph_path=None):
     target_roles = {'Hero', 'Victim', 'Threat'}
     
     # Define normalize_group function once
@@ -101,17 +111,20 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fi
         print(f"Writing constraints incrementally to {constraints_file}")
         processed_combinations = 0
 
-        db = ConstraintDB(db_path=constraints_file)
+        constraints_flat_db = ConstraintDB(db_path=constraints_flat_path)
+        constraints_graph_db = ConstraintDB(db_path=constraints_graph_path)
 
         for batch in compute_constraints_generator(processed_chains, chain_group_roles):
             # Create a batch dictionary to update shelve efficiently
             print(f"Writing batch of size {len(batch)} to disk...", flush=True)
-            db.add_batch(batch)
+            constraints_flat_db.add_tuples(batch["sorted_constraints"])
+            constraints_graph_db.update_sets(batch["constraint_graph"])
             processed_combinations += len(batch)
         
         print(f"Total constraints written: {processed_combinations}")
 
-        db.close()
+        constraints_flat_db.close()
+        constraints_graph_db.close()
         return None, chain_group_roles  # Return None for constraints since they're on disk
     else:
         # Fall back to in-memory approach for small datasets
@@ -172,8 +185,10 @@ if __name__ == '__main__':
     constraints_file = config["processed_chains_path"].replace('.pkl', '_constraints.pkl')
     _, chain_group_roles = compute_constraints(
         processed_chains, 
-        normalize_groups=True, 
-        constraints_file=config["constraints_path"]
+        normalize_groups=True,
+        constraints_flat_path=config["constraints_flat_path"],
+        constraints_graph_path = config["constraints_graph_path"]
+
     )
 
     output = {
