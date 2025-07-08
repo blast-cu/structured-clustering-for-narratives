@@ -1029,7 +1029,7 @@ if __name__ == '__main__':
                                                   sample_near_centroids=True,
                                                   progressive_init=False,
                                                   memory_decay_factor=1.0,
-                                                  save_dir="./data/immigration/")
+                                                  save_dir=config["clusters_path"]+"/finetuned_pckmeans")
 
     best_model = framework.train(data["chain_sents"], constraints)
 
