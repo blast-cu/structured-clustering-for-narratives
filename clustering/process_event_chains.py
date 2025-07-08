@@ -4,13 +4,14 @@ import pickle
 import random
 import sys
 import os
-import shelve
 
 from collections import Counter
 from typing import List, Tuple
 
 from pyhocon import ConfigFactory
 from tqdm import tqdm
+
+from utils.ConstraintDB import ConstraintDB
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -20,7 +21,6 @@ if project_root not in sys.path:
 # Import the schemas module and create an alias for pickle compatibility
 import annotation.schemas as schemas
 sys.modules['schemas'] = schemas
-
 
 def process_event_chains(data):
     chain_idx = 0
@@ -40,7 +40,7 @@ def process_event_chains(data):
     return processed_chains, chain_sents
 
 
-def compute_constraints_generator(processed_chains, chain_group_roles, batch_size=10000000):
+def compute_constraints_generator(processed_chains, chain_group_roles, batch_size=1000000):
     """Generator that yields constraint batches for memory efficiency"""
     batch:List[Tuple[int, int]] = []
     
@@ -100,24 +100,18 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fi
     if constraints_file:
         print(f"Writing constraints incrementally to {constraints_file}")
         processed_combinations = 0
-        
-        # Use shelve to store constraints as a persistent dictionary
-        with shelve.open(constraints_file, 'c') as constraints_db:
-            for batch in compute_constraints_generator(processed_chains, chain_group_roles):
-                # Create a batch dictionary to update shelve efficiently
-                batch_dict = {}
-                for k1, k2 in batch:
-                    # Use repr to create a string key that preserves the tuple structure
-                    key = repr((k1, k2))
-                    batch_dict[key] = 1
-                
-                # Batch update the shelve database
-                constraints_db.update(batch_dict)
-                processed_combinations += len(batch)
-                if processed_combinations % 1000000 == 0:  # Print every 1M constraints
-                    print(f"Processed {processed_combinations} combinations so far...")
+
+        db = ConstraintDB(db_path=constraints_file)
+
+        for batch in compute_constraints_generator(processed_chains, chain_group_roles):
+            # Create a batch dictionary to update shelve efficiently
+            print(f"Writing batch of size {len(batch)} to disk...", flush=True)
+            db.add_batch(batch)
+            processed_combinations += len(batch)
         
         print(f"Total constraints written: {processed_combinations}")
+
+        db.close()
         return None, chain_group_roles  # Return None for constraints since they're on disk
     else:
         # Fall back to in-memory approach for small datasets
