@@ -4,6 +4,7 @@ import pickle
 import random
 import sys
 import os
+import shelve
 
 from collections import Counter
 from typing import List, Tuple
@@ -39,7 +40,7 @@ def process_event_chains(data):
     return processed_chains, chain_sents
 
 
-def compute_constraints_generator(processed_chains, chain_group_roles, batch_size=500000):
+def compute_constraints_generator(processed_chains, chain_group_roles, batch_size=10000000):
     """Generator that yields constraint batches for memory efficiency"""
     batch:List[Tuple[int, int]] = []
     
@@ -95,16 +96,22 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fi
 
         chain_group_roles[chain_id] = candidates
     
-    # Use generator approach with incremental disk writing
+    # Use shelve for memory-efficient constraint storage
     if constraints_file:
         print(f"Writing constraints incrementally to {constraints_file}")
         processed_combinations = 0
         
-        with open(constraints_file, 'wb') as f:
+        # Use shelve to store constraints as a persistent dictionary
+        with shelve.open(constraints_file, 'c') as constraints_db:
             for batch in compute_constraints_generator(processed_chains, chain_group_roles):
-                pickle.dump(batch, f)
+                # Store each constraint as a key-value pair in shelve
+                for k1, k2 in batch:
+                    # Use repr to create a string key that preserves the tuple structure
+                    key = repr((k1, k2))
+                    constraints_db[key] = 1
                 processed_combinations += len(batch)
-                print(f"Processed {processed_combinations} combinations so far...")
+                if processed_combinations % 1000000 == 0:  # Print every 1M constraints
+                    print(f"Processed {processed_combinations} combinations so far...")
         
         print(f"Total constraints written: {processed_combinations}")
         return None, chain_group_roles  # Return None for constraints since they're on disk
