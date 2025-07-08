@@ -11,7 +11,8 @@ from typing import List, Tuple
 from pyhocon import ConfigFactory
 from tqdm import tqdm
 
-from utils.ConstraintDB import ConstraintDB
+from utils.constraint_flat_db import ConstraintFlatDB
+from utils.constraints_graph_db import ConstraintGraphDB
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -111,8 +112,8 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fl
         print(f"Writing constraints incrementally to {constraints_file}")
         processed_combinations = 0
 
-        constraints_flat_db = ConstraintDB(db_path=constraints_flat_path)
-        constraints_graph_db = ConstraintDB(db_path=constraints_graph_path)
+        constraints_flat_db = ConstraintFlatDB(db_path=constraints_flat_path)
+        constraints_graph_db = ConstraintGraphDB(db_path=constraints_graph_path)
 
         for batch in compute_constraints_generator(processed_chains, chain_group_roles):
             # Create a batch dictionary to update shelve efficiently
