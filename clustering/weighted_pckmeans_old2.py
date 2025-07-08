@@ -6,13 +6,10 @@ from typing import Optional, List, Tuple, Dict, Set
 import numpy as np
 import numpy.typing as npt
 from pyhocon import ConfigFactory
-from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 from clustering.initializer.base_initializer import BaseInitializer
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
-from utils.constraint_flat_db import ConstraintFlatDB
-from utils.constraints_graph_db import ConstraintGraphDB
 
 
 @dataclass
@@ -37,6 +34,8 @@ class ConstrainedKMeans:
                  tol: float = 1e-4,
                  early_stopping_tol: int = 10,
                  random_state: Optional[int] = None,
+                 constraint_graph: Dict[int, Set[int]] = None,
+                 sorted_constraints: List[Tuple[int, int]] = None,
                  top_k: Optional[int] = None):
         """
         Initialize the Pairwise Constrained KMeans algorithm
@@ -49,6 +48,8 @@ class ConstrainedKMeans:
             tol: Convergence tolerance for centroid movement
             early_stopping_tol: Number of iterations with no improvement before early stopping
             random_state: Random seed
+            constraint_graph: Pre-computed constraint graph
+            sorted_constraints: Pre-computed sorted constraints
             top_k: If specified, only apply constraints to the top k% of items in each cluster
         """
 
@@ -59,6 +60,8 @@ class ConstrainedKMeans:
         self.tol = tol
         self.early_stopping_tol = early_stopping_tol
         self.random_state = random_state
+        self.constraint_graph = constraint_graph
+        self.sorted_constraints = sorted_constraints
         self.top_k = top_k
 
         # Attributes that will be set during fitting
@@ -131,12 +134,13 @@ class ConstrainedKMeans:
         return constraint_graph, sorted_constraints
 
     def _find_violations(self, assignments: npt.NDArray[np.int64],
+                       sorted_constraints: List[Tuple[int, int]],
                        top_k_items: Optional[Set[int]] = None) -> List[Tuple[int, int]]:
         """Find all violated constraints, optionally filtered by top_k items"""
 
         violations = []
 
-        for i, j in self.sorted_constraints.read_all_tuples():
+        for i, j in sorted_constraints:
             if assignments[i] == assignments[j]:
                 # Only check constraints if both items are in top k% (if top_k is specified)
                 if top_k_items is None or (i in top_k_items and j in top_k_items):
@@ -146,15 +150,19 @@ class ConstrainedKMeans:
 
     def _count_violations(self,
                          assignments: npt.NDArray[np.int64],
+                         constraint_graph: Dict[int, Set[int]],
+                         sorted_constraints: List[Tuple[int, int]],
                          top_k_items: Optional[Set[int]] = None) -> Tuple[int, List[Tuple[int, int]]]:
         """Count number of constraint violations and return list of violated constraints"""
 
-        violations = self._find_violations(assignments, top_k_items)
+        violations = self._find_violations(assignments, sorted_constraints, top_k_items)
         return len(violations), violations
 
     def _compute_metrics(self,
                         X: npt.NDArray[np.float64],
-                        assignments: npt.NDArray[np.int64]) -> ClusteringMetrics:
+                        assignments: npt.NDArray[np.int64],
+                        constraint_graph: Dict[int, Set[int]],
+                        sorted_constraints: List[Tuple[int, int]]) -> ClusteringMetrics:
         """Compute clustering metrics"""
 
         # Calculate inertia
@@ -169,7 +177,9 @@ class ConstrainedKMeans:
             if self.top_k is not None:
                 top_k_items = self._get_top_k_items(assignments, distances)
             
-            num_violations, violated_constraints = self._count_violations(assignments, top_k_items)
+            num_violations, violated_constraints = self._count_violations(
+                assignments, constraint_graph, sorted_constraints, top_k_items
+            )
         else:
             num_violations = 0
             violated_constraints = []
@@ -180,7 +190,8 @@ class ConstrainedKMeans:
         return ClusteringMetrics(inertia, num_violations, total_cost, violated_constraints)
 
     def _assign_points(self,
-                      X: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
+                      X: npt.NDArray[np.float64],
+                      constraint_graph: Dict[int, Set[int]]) -> npt.NDArray[np.int64]:
         """Assign points to clusters considering cannot-link constraints"""
 
         n_samples = X.shape[0]
@@ -209,9 +220,7 @@ class ConstrainedKMeans:
             cluster_costs = distances[:, i].copy()
 
             # Add penalty for constraint violations only if both points are in top_k
-            # for j in constraint_graph[i]: # RDEDIT
-            candidates = self.constraint_graph.get_set(i)
-            for j in candidates:
+            for j in constraint_graph[i]:
                 if j < i:  # Only consider already assigned points
                     # Apply constraint penalty only if both items are in top k% (or no top_k filtering)
                     if top_k_items is None or (i in top_k_items and j in top_k_items):
@@ -268,16 +277,14 @@ class ConstrainedKMeans:
 
     def fit(self,
             X: npt.NDArray[np.float64],
-            sorted_constraints_path: str,
-            constraint_graph_path: str,
+            cl_constraints: List[Tuple[int, int]],
             skip_init: bool = False) -> 'ConstrainedKMeans':
         """
         Fit the Constrained KMeans clustering model
 
         Args:
             X: Training data
-            sorted_constraints_path: Path to the sorted constraints database
-            constraint_graph_path: Path to the constraint graph database
+            cl_constraints: Cannot-link constraints
             skip_init: If True, use existing cluster centers for initialization
 
         Returns:
@@ -293,7 +300,7 @@ class ConstrainedKMeans:
         else:
             print("Initializing cluster centers...", flush=True)
             self.cluster_centers_ = self.initializer.initialize(
-                X, self.n_clusters, sorted_constraints_path, self.random_state
+                X, self.n_clusters, cl_constraints, self.random_state
             )
 
         # Initialize tracking variables
@@ -301,18 +308,15 @@ class ConstrainedKMeans:
         self.violations_per_iteration = []
         self.all_violations_history = []
 
-        # if self.w_cl > 0:
-        #     # Process constraints only once
-        #     print("Building constraint graph...", flush=True)
-        #     if self.constraint_graph == None and self.sorted_constraints == None:
-        #         self.constraint_graph, self.sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
-        # else:
-        #     # Empty placeholders when w_cl = 0
-        #     self.constraint_graph = {}
-        #     self.sorted_constraints = []
-
-        self.sorted_constraints = ConstraintFlatDB(sorted_constraints_path)
-        self.constraint_graph = ConstraintGraphDB(constraint_graph_path)
+        if self.w_cl > 0:
+            # Process constraints only once
+            print("Building constraint graph...", flush=True)
+            if self.constraint_graph == None and self.sorted_constraints == None:
+                self.constraint_graph, self.sorted_constraints = self._build_constraint_graph(len(X), cl_constraints)
+        else:
+            # Empty placeholders when w_cl = 0
+            self.constraint_graph = {}
+            self.sorted_constraints = []
 
         # Initialize history and tracking variables
         self.history_ = []
@@ -324,13 +328,13 @@ class ConstrainedKMeans:
         # Main clustering loop
         for iteration in tqdm(range(self.max_iter)):
             # Get new assignments
-            new_assignments = self._assign_points(X)
+            new_assignments = self._assign_points(X, self.constraint_graph)
             
             # Update centers
             new_centers = self._update_centers(X, new_assignments)
             
             # Compute metrics
-            metrics = self._compute_metrics(X, new_assignments)
+            metrics = self._compute_metrics(X, new_assignments, self.constraint_graph, self.sorted_constraints)
             self.history_.append(metrics)
             
             # Update violation statistics only if needed
@@ -370,9 +374,6 @@ class ConstrainedKMeans:
             self.persistent_violations = [tuple(sorted(v)) for v in self.potential_persistent_violations]
         else:
             self.persistent_violations = []
-
-        self.sorted_constraints.close()
-        self.constraint_graph.close()
 
         return self
 
@@ -462,14 +463,8 @@ if __name__ == '__main__':
     print("Loading data for clustering...", flush=True)
 
     # Load data
-    with open(config["processed_chains_path"], 'rb') as f:
+    with open(config["cluster_embs_path"], 'rb') as f:
         data = pickle.load(f)
-
-    sbert_model = SentenceTransformer(config["cluster_model"])
-
-    embeddings = sbert_model.encode(
-        data["chain_sents"], batch_size=32, show_progress_bar=True, normalize_embeddings=True
-    )
 
     # Create initializer (either standard or constraint-aware)
     initializer = KMeansPlusPlusInit(
@@ -490,8 +485,6 @@ if __name__ == '__main__':
     )
 
     # Fit the model
-    model.fit(X=embeddings,
-              sorted_constraints_path=config["constraints_flat_path"],
-              constraint_graph_path=config["constraints_graph_path"])
+    model.fit(data['embs'], data['constraints'])
 
     model.save(config)

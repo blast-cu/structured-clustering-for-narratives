@@ -7,6 +7,7 @@ from typing import Optional, Dict, List, Tuple
 import numpy as np
 import torch
 from datasets import Dataset
+from numpy import ndarray
 from pyhocon import ConfigFactory
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
 from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss
@@ -14,6 +15,8 @@ from tqdm import tqdm
 
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
 from clustering.weighted_pckmeans import ConstrainedKMeans
+from utils.constraint_flat_db import ConstraintFlatDB
+from utils.constraints_graph_db import ConstraintGraphDB
 
 
 class SBERTConstrainedClusteringTrainer:
@@ -257,7 +260,7 @@ class SBERTConstrainedClusteringTrainer:
                 # from the same cluster in a single pass
                 
                 # Get the constraints for the anchor point
-                anchor_constraints = constraint_points.get(anchor_idx, set())
+                anchor_constraints = constraint_points.get_set(anchor_idx)
                 
                 # Divide same-cluster points into those with and without constraints
                 constrained_same_cluster = []
@@ -318,7 +321,7 @@ class SBERTConstrainedClusteringTrainer:
                 # Filter out points with constraint violations
                 valid_diff_indices = []
                 for i, idx in enumerate(sampled_diff):
-                    if idx in constraint_points.get(anchor_idx, set()):
+                    if idx in constraint_points.get_set(anchor_idx):
                         continue  # Skip if there's a constraint
                     valid_diff_indices.append(i)
                 
@@ -617,7 +620,7 @@ class SBERTConstrainedClusteringTrainer:
     def hybrid_initialization(self,
                               model: ConstrainedKMeans,
                               new_embeddings: np.ndarray,
-                              constraints: List[Tuple[int, int]],
+                              constraints_path: str,
                               reinit_fraction: float = 0.3) -> np.ndarray:
         """
         Reinitialize worst-performing centroids while keeping others
@@ -659,7 +662,7 @@ class SBERTConstrainedClusteringTrainer:
             w_cl=model.w_cl
         )
         reinit_centroids = initializer.initialize(
-            new_embeddings, n_reinit, constraints, random_state=42
+            new_embeddings, n_reinit, constraints_path, random_state=42
         )
 
         for i, cluster_id in enumerate(clusters_to_reinit):
@@ -764,7 +767,7 @@ class SBERTConstrainedClusteringTrainer:
 
     def train(self,
               sentences: List,
-              constraints: List[Tuple[int, int]],
+              config,
               kmeans_params: Dict = None,
               existing_metrics: List[Dict] = None) -> Dict:
         """
@@ -801,12 +804,15 @@ class SBERTConstrainedClusteringTrainer:
         previous_pckmeans_model = None
         previous_embeddings = None
 
-        self.constraint_graph = None
-        self.sorted_constraints = None
+        self.constraint_graph_path = config["constraint_graph_path"]
+        self.sorted_constraints_path = config["constraint_flat_path"]
+
+        self.sorted_constraints = ConstraintFlatDB(self.sorted_constraints_path)
+        self.constraint_graph = ConstraintGraphDB(self.constraint_graph_path)
 
         best_model = {
-            'model': None,
-            'embs': None,
+            'model': ConstrainedKMeans,
+            'embs': ndarray,
             'inertia': float('inf'),
             'constraint_violations': float('inf')
         }
@@ -847,7 +853,7 @@ class SBERTConstrainedClusteringTrainer:
             elif initialization_strategy == "hybrid" and previous_pckmeans_model is not None:
                 # Hybrid reinitialization
                 init_centroids = self.hybrid_initialization(
-                    previous_pckmeans_model, embeddings, constraints, reinit_fraction=0.3
+                    previous_pckmeans_model, embeddings, self.sorted_constraints_path, reinit_fraction=0.3
                 )
             elif previous_pckmeans_model is not None and previous_embeddings is not None:
                 # Warm start with adjustments
@@ -861,8 +867,8 @@ class SBERTConstrainedClusteringTrainer:
                 n_clusters=self.n_clusters,
                 initializer=initializer,
                 w_cl=self.w_cl,
-                constraint_graph=self.constraint_graph,
-                sorted_constraints=self.sorted_constraints,
+                # constraint_graph=self.constraint_graph,
+                # sorted_constraints=self.sorted_constraints,
                 **kmeans_params
             )
 
@@ -873,10 +879,16 @@ class SBERTConstrainedClusteringTrainer:
             if init_centroids is not None:
                 pckmeans_model.cluster_centers_ = init_centroids
                 # Fit with custom initialization
-                pckmeans_model.fit(embeddings, constraints, skip_init=True)
+                pckmeans_model.fit(embeddings,
+                                    sorted_constraints_path=self.sorted_constraints_path,
+                                    constraint_graph_path=self.constraint_graph_path,
+                                    skip_init=True)
             else:
                 # Regular fit
-                pckmeans_model.fit(embeddings, constraints, skip_init=False)
+                pckmeans_model.fit(embeddings,
+                                    sorted_constraints_path=self.sorted_constraints_path,
+                                    constraint_graph_path=self.constraint_graph_path,
+                                    skip_init=False)
 
             # Get clustering metrics
             final_metrics = pckmeans_model.history_[-1]
@@ -897,8 +909,8 @@ class SBERTConstrainedClusteringTrainer:
                 print("Reached maximum iterations. Stopping training.", flush=True)
                 break
 
-            self.constraint_graph = pckmeans_model.constraint_graph
-            self.sorted_constraints = pckmeans_model.sorted_constraints
+            # self.constraint_graph = pckmeans_model.constraint_graph
+            # self.sorted_constraints = pckmeans_model.sorted_constraints
 
             # Generate training examples
             print("Generating training examples...", flush=True)
@@ -970,6 +982,8 @@ class SBERTConstrainedClusteringTrainer:
             # Update previous model
             previous_pckmeans_model = pckmeans_model
 
+        self.sorted_constraints.close()
+        self.constraint_graph.close()
 
         return best_model
 
@@ -1012,18 +1026,18 @@ if __name__ == '__main__':
     with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
 
-    constraints = {}
-    with open(config["constraints_path"], "rb") as f:
-        while True:
-            try:
-                batch = pickle.load(f)
-                # Convert batch (list of tuples) to dict entries
-                for k1, k2 in batch:
-                    constraints[(k1, k2)] = 1
-                # Delete batch from memory after processing
-                del batch
-            except EOFError:
-                break
+    # constraints = {}
+    # with open(config["constraints_path"], "rb") as f:
+    #     while True:
+    #         try:
+    #             batch = pickle.load(f)
+    #             # Convert batch (list of tuples) to dict entries
+    #             for k1, k2 in batch:
+    #                 constraints[(k1, k2)] = 1
+    #             # Delete batch from memory after processing
+    #             del batch
+    #         except EOFError:
+    #             break
 
     framework = SBERTConstrainedClusteringTrainer(n_clusters=args.k,
                                                   w_cl=args.w,
@@ -1033,6 +1047,6 @@ if __name__ == '__main__':
                                                   memory_decay_factor=1.0,
                                                   save_dir=config["clusters_path"]+"/finetuned_pckmeans")
 
-    best_model = framework.train(data["chain_sents"], constraints)
+    best_model = framework.train(data["chain_sents"], config)
 
     framework.save(config, best_model['model'], best_model['embs'])
