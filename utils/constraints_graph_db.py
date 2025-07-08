@@ -47,6 +47,15 @@ class ConstraintGraphDB:
         members.add(member)
         self.add_set(dict_key, members)
 
+    def update_sets(self, dict_of_sets):
+        """Merge sets - add if doesn't exist, merge if exists"""
+        with self.env.begin(write=True) as txn:
+            for dict_key, new_members in dict_of_sets.items():
+                existing_data = txn.get(self._key_to_bytes(dict_key))
+                existing_set = self._deserialize_set(existing_data) if existing_data else set()
+                merged_set = existing_set | set(new_members)  # Union
+                txn.put(self._key_to_bytes(dict_key), self._serialize_set(merged_set))
+
     def contains(self, dict_key, member):
         """Check if member is in set for dict_key"""
         members = self.get_set(dict_key)
