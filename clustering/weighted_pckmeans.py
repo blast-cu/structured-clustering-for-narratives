@@ -37,7 +37,8 @@ class ConstrainedKMeans:
                  tol: float = 1e-4,
                  early_stopping_tol: int = 10,
                  random_state: Optional[int] = None,
-                 top_k: Optional[int] = None):
+                 centroid_percentile: Optional[float] = None,
+                 pairwise_percentile: Optional[float] = None):
         """
         Initialize the Pairwise Constrained KMeans algorithm
 
@@ -49,7 +50,8 @@ class ConstrainedKMeans:
             tol: Convergence tolerance for centroid movement
             early_stopping_tol: Number of iterations with no improvement before early stopping
             random_state: Random seed
-            top_k: If specified, only apply constraints to the top k% of items in each cluster
+            centroid_percentile: Percentile threshold for distance to cluster centers (e.g., 25 for top 25%)
+            pairwise_percentile: Percentile threshold for pairwise distances (e.g., 10 for bottom 10%)
         """
 
         self.n_clusters = n_clusters
@@ -59,7 +61,8 @@ class ConstrainedKMeans:
         self.tol = tol
         self.early_stopping_tol = early_stopping_tol
         self.random_state = random_state
-        self.top_k = top_k
+        self.centroid_percentile = centroid_percentile
+        self.pairwise_percentile = pairwise_percentile
 
         # Attributes that will be set during fitting
         self.cluster_centers_: Optional[npt.NDArray[np.float64]] = None
@@ -80,32 +83,55 @@ class ConstrainedKMeans:
             np.sum((X - center) ** 2, axis=1)
             for center in self.cluster_centers_
         ])
+    
+    def _compute_dual_thresholds(self, X: npt.NDArray[np.float64], assignments: npt.NDArray[np.int64]) -> Tuple[float, float]:
+        """Compute global centroid and pairwise distance thresholds using efficient numpy operations"""
+        
+        # Compute global centroid threshold
+        centroid_threshold = None
+        if self.centroid_percentile is not None:
+            # Compute distance from each point to its assigned cluster center
+            assigned_centers = self.cluster_centers_[assignments]  # (n_samples, n_features)
+            distances_to_assigned_centers = np.linalg.norm(X - assigned_centers, axis=1)
+            centroid_threshold = np.percentile(distances_to_assigned_centers, self.centroid_percentile)
+        
+        # Compute global pairwise threshold
+        pairwise_threshold = None
+        if self.pairwise_percentile is not None:
+            # Use vectorized pairwise distance computation on a sample
+            n_samples = min(1000, len(X))  # Limit for performance
+            sample_indices = np.random.choice(len(X), n_samples, replace=False)
+            sample_X = X[sample_indices]
+            
+            # Vectorized pairwise distance computation
+            # Broadcasting: (n, 1, d) - (1, n, d) -> (n, n, d)
+            diff = sample_X[:, np.newaxis, :] - sample_X[np.newaxis, :, :]
+            # Compute squared distances: (n, n)
+            squared_distances = np.sum(diff ** 2, axis=2)
+            # Take square root and get upper triangular part (avoid duplicates)
+            distances = np.sqrt(squared_distances)
+            upper_triangle = np.triu_indices(n_samples, k=1)
+            pairwise_distances = distances[upper_triangle]
+            
+            pairwise_threshold = np.percentile(pairwise_distances, self.pairwise_percentile)
+        
+        return centroid_threshold, pairwise_threshold
 
-    def _get_top_k_items(self, assignments: npt.NDArray[np.int64], distances: npt.NDArray[np.float64]) -> Set[int]:
-        """Get the top k% of items in each cluster based on proximity to cluster centers."""
+    def _get_constraint_eligible_items(self, X: npt.NDArray[np.float64], assignments: npt.NDArray[np.int64], centroid_threshold: Optional[float]) -> Set[int]:
+        """Get items eligible for constraint enforcement based on centroid threshold."""
         
-        top_k_items = set()
-        
-        for cluster_id in range(self.n_clusters):
-            cluster_mask = assignments == cluster_id
-            cluster_indices = np.where(cluster_mask)[0]
+        # Filter items based on centroid threshold
+        if centroid_threshold is not None:
+            # Get distance from each point to its assigned cluster center
+            assigned_centers = self.cluster_centers_[assignments]
+            distances_to_assigned_centers = np.linalg.norm(X - assigned_centers, axis=1)
             
-            if len(cluster_indices) == 0:
-                continue
-                
-            # Get distances to cluster center for items in this cluster
-            cluster_distances = distances[cluster_id, cluster_indices]
-            
-            # Calculate number of top k% items
-            k_count = max(1, int(len(cluster_indices) * self.top_k / 100))
-            
-            # Get indices of top k% items (closest to cluster center)
-            top_k_indices_in_cluster = np.argsort(cluster_distances)[:k_count]
-            top_k_global_indices = cluster_indices[top_k_indices_in_cluster]
-            
-            top_k_items.update(top_k_global_indices)
-        
-        return top_k_items
+            # Items closer than threshold are eligible
+            eligible_mask = distances_to_assigned_centers <= centroid_threshold
+            return set(np.where(eligible_mask)[0])
+        else:
+            # If no centroid threshold, all items are eligible
+            return set(range(len(X)))
 
     @staticmethod
     def _build_constraint_graph(n_samples: int,
@@ -130,26 +156,38 @@ class ConstrainedKMeans:
 
         return constraint_graph, sorted_constraints
 
-    def _find_violations(self, assignments: npt.NDArray[np.int64],
-                       top_k_items: Optional[Set[int]] = None) -> List[Tuple[int, int]]:
-        """Find all violated constraints, optionally filtered by top_k items"""
+    def _find_violations(self, X: npt.NDArray[np.float64], assignments: npt.NDArray[np.int64],
+                       eligible_items: Set[int], pairwise_threshold: Optional[float]) -> List[Tuple[int, int]]:
+        """Find all violated constraints, filtered by dual threshold eligibility"""
 
         violations = []
 
         for i, j in self.sorted_constraints.read_all_tuples():
             if assignments[i] == assignments[j]:
-                # Only check constraints if both items are in top k% (if top_k is specified)
-                if top_k_items is None or (i in top_k_items and j in top_k_items):
+                # Check dual threshold conditions
+                constraint_applies = True
+                
+                # Check centroid threshold (via eligible items)
+                constraint_applies = constraint_applies and (i in eligible_items and j in eligible_items)
+                
+                # Check pairwise threshold
+                if constraint_applies and pairwise_threshold is not None:
+                    pairwise_distance = np.linalg.norm(X[i] - X[j])
+                    constraint_applies = constraint_applies and (pairwise_distance <= pairwise_threshold)
+                
+                if constraint_applies:
                     violations.append((i, j))
 
         return violations
 
     def _count_violations(self,
+                         X: npt.NDArray[np.float64],
                          assignments: npt.NDArray[np.int64],
-                         top_k_items: Optional[Set[int]] = None) -> Tuple[int, List[Tuple[int, int]]]:
+                         eligible_items: Set[int],
+                         pairwise_threshold: Optional[float]) -> Tuple[int, List[Tuple[int, int]]]:
         """Count number of constraint violations and return list of violated constraints"""
 
-        violations = self._find_violations(assignments, top_k_items)
+        violations = self._find_violations(X, assignments, eligible_items, pairwise_threshold)
         return len(violations), violations
 
     def _compute_metrics(self,
@@ -164,12 +202,13 @@ class ConstrainedKMeans:
 
         # Only check violations if constraints have weight
         if self.w_cl > 0:
-            # Get top k% items if top_k is specified
-            top_k_items = None
-            if self.top_k is not None:
-                top_k_items = self._get_top_k_items(assignments, distances)
+            # Compute thresholds once
+            centroid_threshold, pairwise_threshold = self._compute_dual_thresholds(X, assignments)
             
-            num_violations, violated_constraints = self._count_violations(assignments, top_k_items)
+            # Get eligible items based on centroid threshold
+            eligible_items = self._get_constraint_eligible_items(X, assignments, centroid_threshold)
+            
+            num_violations, violated_constraints = self._count_violations(X, assignments, eligible_items, pairwise_threshold)
         else:
             num_violations = 0
             violated_constraints = []
@@ -181,7 +220,7 @@ class ConstrainedKMeans:
 
     def _assign_points(self,
                       X: npt.NDArray[np.float64]) -> npt.NDArray[np.int64]:
-        """Assign points to clusters considering cannot-link constraints"""
+        """Assign points to clusters considering cannot-link constraints with dual thresholds"""
 
         n_samples = X.shape[0]
         assignments = np.zeros(n_samples, dtype=np.int64)
@@ -199,22 +238,30 @@ class ConstrainedKMeans:
         # First pass: assign all points without constraints to get initial assignments
         initial_assignments = np.argmin(distances, axis=0)
         
-        # Get top k% items if top_k is specified
-        top_k_items = None
-        if self.top_k is not None:
-            top_k_items = self._get_top_k_items(initial_assignments, distances)
+        # Compute thresholds once based on initial assignments
+        centroid_threshold, pairwise_threshold = self._compute_dual_thresholds(X, initial_assignments)
+        eligible_items = self._get_constraint_eligible_items(X, initial_assignments, centroid_threshold)
 
         # Assign points one by one
         for i in range(n_samples):
             cluster_costs = distances[:, i].copy()
 
-            # Add penalty for constraint violations only if both points are in top_k
-            # for j in constraint_graph[i]: # RDEDIT
+            # Add penalty for constraint violations based on dual thresholds
             candidates = self.constraint_graph.get_set(i)
             for j in candidates:
                 if j < i:  # Only consider already assigned points
-                    # Apply constraint penalty only if both items are in top k% (or no top_k filtering)
-                    if top_k_items is None or (i in top_k_items and j in top_k_items):
+                    # Check dual threshold conditions
+                    constraint_applies = True
+                    
+                    # Check centroid threshold (via eligible items)
+                    constraint_applies = constraint_applies and (i in eligible_items and j in eligible_items)
+                    
+                    # Check pairwise threshold
+                    if constraint_applies and pairwise_threshold is not None:
+                        pairwise_distance = np.linalg.norm(X[i] - X[j])
+                        constraint_applies = constraint_applies and (pairwise_distance <= pairwise_threshold)
+                    
+                    if constraint_applies:
                         cluster_costs[assignments[j]] += self.w_cl
 
             assignments[i] = np.argmin(cluster_costs)
@@ -450,15 +497,18 @@ if __name__ == '__main__':
     parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
     parser.add_argument('-i', metavar='MAX_ITER', default=100, type=int, help='maximum number of iterations')
     parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
-    parser.add_argument('--top_k', metavar='TOP_K', default=None, type=int, help='only apply constraints to top k% of items in each cluster')
+    parser.add_argument('--centroid_percentile', metavar='CENTROID_PERCENTILE', default=None, type=float, help='percentile threshold for distance to cluster centers (e.g., 25 for top 25%)')
+    parser.add_argument('--pairwise_percentile', metavar='PAIRWISE_PERCENTILE', default=None, type=float, help='percentile threshold for pairwise distances (e.g., 10 for bottom 10%)')
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     print("N_CLUSTERS: " + str(args.k), flush=True)
     print("W_CL: " + str(args.w), flush=True)
-    if args.top_k is not None:
-        print("TOP_K: " + str(args.top_k), flush=True)
+    if args.centroid_percentile is not None:
+        print("CENTROID_PERCENTILE: " + str(args.centroid_percentile), flush=True)
+    if args.pairwise_percentile is not None:
+        print("PAIRWISE_PERCENTILE: " + str(args.pairwise_percentile), flush=True)
 
     print("Loading data for clustering...", flush=True)
 
@@ -487,7 +537,8 @@ if __name__ == '__main__':
         tol=1e-4,
         early_stopping_tol=10,
         random_state=config['seed'],
-        top_k=args.top_k
+        centroid_percentile=args.centroid_percentile,
+        pairwise_percentile=args.pairwise_percentile
     )
 
     # Fit the model

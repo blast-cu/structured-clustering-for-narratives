@@ -880,7 +880,8 @@ class SBERTConstrainedClusteringTrainer:
                 n_clusters=self.n_clusters,
                 initializer=initializer,
                 w_cl=self.w_cl,
-                top_k=25,
+                centroid_percentile=25,
+                pairwise_percentile=15,
                 # constraint_graph=self.constraint_graph,
                 # sorted_constraints=self.sorted_constraints,
                 **kmeans_params
