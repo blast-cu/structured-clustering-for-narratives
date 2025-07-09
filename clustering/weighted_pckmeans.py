@@ -163,7 +163,7 @@ class ConstrainedKMeans:
         violations = []
 
         # for i, j in self.sorted_constraints.read_all_tuples():
-        for (i, j) in self.sorted_constraints:
+        for i, j in self.sorted_constraints:
             if assignments[i] == assignments[j]:
                 # Check dual threshold conditions
                 constraint_applies = True

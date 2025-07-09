@@ -858,7 +858,7 @@ class SBERTConstrainedClusteringTrainer:
             if initialization_strategy == "scikit_kmeans":
                 # Use scikit-learn KMeans for initialization
                 print("Using scikit-learn KMeans for initialization...", flush=True)
-                sk_kmeans = KMeans(n_clusters=self.n_clusters, random_state=config["seed"], init='k-means++', n_init=10)
+                sk_kmeans = KMeans(n_clusters=self.n_clusters, random_state=config["seed"], init='k-means++', n_init=5)
                 sk_kmeans.fit(embeddings)
                 init_centroids = sk_kmeans.cluster_centers_
             elif initialization_strategy == "from_scratch" or iteration == 0:

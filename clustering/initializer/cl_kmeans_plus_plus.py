@@ -36,7 +36,7 @@ class KMeansPlusPlusInit(BaseInitializer):
 
     @staticmethod
     def _build_constraint_matrix(n_samples: int,
-                               constraints: List[tuple(int, int)]) -> csr_matrix:
+                               constraints: List[Tuple[int, int]]) -> csr_matrix:
         """
         Build sparse constraint matrix for efficient lookup and vectorized operations
         
@@ -48,7 +48,7 @@ class KMeansPlusPlusInit(BaseInitializer):
         cols = []
         
         # Add constraints to the sparse matrix (symmetric)
-        for (i, j) in constraints:
+        for i, j in constraints:
             rows.extend([i, j])
             cols.extend([j, i])
 
