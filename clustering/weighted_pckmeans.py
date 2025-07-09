@@ -249,7 +249,8 @@ class ConstrainedKMeans:
 
             # Add penalty for constraint violations based on dual thresholds
             # candidates = self.constraint_graph.get_set(i)
-            for j in self.constraint_graph[i]:
+            candidates = self.constraint_graph.get(i, set())
+            for j in candidates:
                 if j < i:  # Only consider already assigned points
                     # Check dual threshold conditions
                     constraint_applies = True
