@@ -36,26 +36,22 @@ class KMeansPlusPlusInit(BaseInitializer):
 
     @staticmethod
     def _build_constraint_matrix(n_samples: int,
-                               constraints_path: str) -> csr_matrix:
+                               constraints: List[tuple(int, int)]) -> csr_matrix:
         """
         Build sparse constraint matrix for efficient lookup and vectorized operations
         
         Returns a sparse matrix where M[i,j] = 1 if points i and j have a constraint
         """
 
-        # Load constraints DB
-        cl_constraints = ConstraintFlatDB(constraints_path)
-
         # Initialize rows, cols and data for sparse matrix construction
         rows = []
         cols = []
         
         # Add constraints to the sparse matrix (symmetric)
-        for i, j in cl_constraints.read_all_tuples():
+        for (i, j) in constraints:
             rows.extend([i, j])
             cols.extend([j, i])
 
-        cl_constraints.close()
             
         # Create sparse matrix with binary values
         data = np.ones(len(rows), dtype=np.bool_)
@@ -169,7 +165,7 @@ class KMeansPlusPlusInit(BaseInitializer):
     def initialize(self, 
                   X: npt.NDArray[np.float64], 
                   n_clusters: int, 
-                  constraints_path: str = None,
+                  constraints: List[Tuple[int, int]] = None,
                   random_state: Optional[int] = None) -> npt.NDArray[np.float64]:
         """
         Initialize cluster centers using optimized KMeans++
@@ -202,7 +198,7 @@ class KMeansPlusPlusInit(BaseInitializer):
         constraint_matrix = None
         if self.strategy == InitializationStrategy.CONSTRAINT_AWARE and self.w_cl > 0:
             print("Building the sparse constraint matrix...", flush=True)
-            constraint_matrix = self._build_constraint_matrix(n_samples, constraints_path)
+            constraint_matrix = self._build_constraint_matrix(n_samples, constraints)
         
         # Select first center randomly
         first_idx = np.random.randint(n_samples)

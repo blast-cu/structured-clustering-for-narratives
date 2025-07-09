@@ -162,7 +162,8 @@ class ConstrainedKMeans:
 
         violations = []
 
-        for i, j in self.sorted_constraints.read_all_tuples():
+        # for i, j in self.sorted_constraints.read_all_tuples():
+        for (i, j) in self.sorted_constraints:
             if assignments[i] == assignments[j]:
                 # Check dual threshold conditions
                 constraint_applies = True
@@ -247,8 +248,8 @@ class ConstrainedKMeans:
             cluster_costs = distances[:, i].copy()
 
             # Add penalty for constraint violations based on dual thresholds
-            candidates = self.constraint_graph.get_set(i)
-            for j in candidates:
+            # candidates = self.constraint_graph.get_set(i)
+            for j in self.constraint_graph[i]:
                 if j < i:  # Only consider already assigned points
                     # Check dual threshold conditions
                     constraint_applies = True
@@ -315,8 +316,8 @@ class ConstrainedKMeans:
 
     def fit(self,
             X: npt.NDArray[np.float64],
-            sorted_constraints_path: str,
-            constraint_graph_path: str,
+            sorted_constraints: List[Tuple[int, int]],
+            constraint_graph: Dict[int, Set[int]],
             skip_init: bool = False) -> 'ConstrainedKMeans':
         """
         Fit the Constrained KMeans clustering model
@@ -340,7 +341,7 @@ class ConstrainedKMeans:
         else:
             print("Initializing cluster centers...", flush=True)
             self.cluster_centers_ = self.initializer.initialize(
-                X, self.n_clusters, sorted_constraints_path, self.random_state
+                X, self.n_clusters, sorted_constraints, self.random_state
             )
 
         # Initialize tracking variables
@@ -358,8 +359,12 @@ class ConstrainedKMeans:
         #     self.constraint_graph = {}
         #     self.sorted_constraints = []
 
-        self.sorted_constraints = ConstraintFlatDB(sorted_constraints_path)
-        self.constraint_graph = ConstraintGraphDB(constraint_graph_path)
+        # self.sorted_constraints = ConstraintFlatDB(sorted_constraints_path)
+        # self.constraint_graph = ConstraintGraphDB(constraint_graph_path)
+
+        # Initialize constraint graph and sorted constraints
+        self.sorted_constraints = sorted_constraints
+        self.constraint_graph = constraint_graph
 
         # Initialize history and tracking variables
         self.history_ = []
@@ -419,8 +424,8 @@ class ConstrainedKMeans:
         else:
             self.persistent_violations = []
 
-        self.sorted_constraints.close()
-        self.constraint_graph.close()
+        # self.sorted_constraints.close()
+        # self.constraint_graph.close()
 
         return self
 
@@ -541,9 +546,12 @@ if __name__ == '__main__':
         pairwise_percentile=args.pairwise_percentile
     )
 
+    sorted_constraints = ConstraintFlatDB("constraints_flat_path").get_all_tuples_as_list()
+    constraint_graph = ConstraintGraphDB("constraints_graph_path").get_all_sets_as_dict()
+
     # Fit the model
     model.fit(X=embeddings,
-              sorted_constraints_path=config["constraint_flat_path"],
-              constraint_graph_path=config["constraint_graph_path"])
+              sorted_constraints=sorted_constraints,
+              constraint_graph=constraint_graph)
 
     model.save(config)

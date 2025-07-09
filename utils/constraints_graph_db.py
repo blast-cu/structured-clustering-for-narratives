@@ -84,5 +84,23 @@ class ConstraintGraphDB:
                 if not cursor.next():
                     break
 
+    def get_all_sets_as_dict(self):
+        """Read the full database and return as Dict[int, Set[int]]"""
+        constraint_dict = {}
+        with self.env.begin() as txn:
+            cursor = txn.cursor()
+            cursor.first()
+            while True:
+                key_bytes = cursor.key()
+                value_bytes = cursor.value()
+
+                dict_key = struct.unpack('i', key_bytes)[0]
+                members = self._deserialize_set(value_bytes)
+                constraint_dict[dict_key] = members
+
+                if not cursor.next():
+                    break
+        return constraint_dict
+
     def close(self):
         self.env.close()

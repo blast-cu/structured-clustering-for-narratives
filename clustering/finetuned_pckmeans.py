@@ -133,6 +133,10 @@ class SBERTConstrainedClusteringTrainer:
         self.sbert_model = SentenceTransformer(base_model_name)
         self.sbert_model.to(self.device)
 
+        # Initialize constraints
+        self.sorted_constraints = None
+        self.constraint_graph = None
+
         # Create save directory if it doesn't exist
         os.makedirs(save_dir, exist_ok=True)
 
@@ -208,7 +212,7 @@ class SBERTConstrainedClusteringTrainer:
             labels = model.labels_
             
             # Use constraint structures from the class (set in train method)
-            constraint_points = ConstraintGraphDB(self.constraint_graph_path)
+            # constraint_points = ConstraintGraphDB(self.constraint_graph_path)
             
             # Store examples
             positive_same_cluster = []
@@ -261,7 +265,8 @@ class SBERTConstrainedClusteringTrainer:
                 # from the same cluster in a single pass
                 
                 # Get the constraints for the anchor point
-                anchor_constraints = constraint_points.get_set(anchor_idx)
+                anchor_constraints = self.constraint_graph[anchor_idx]
+                # anchor_constraints = constraint_points.get_set(anchor_idx)
                 
                 # Divide same-cluster points into those with and without constraints
                 constrained_same_cluster = []
@@ -322,7 +327,8 @@ class SBERTConstrainedClusteringTrainer:
                 # Filter out points with constraint violations
                 valid_diff_indices = []
                 for i, idx in enumerate(sampled_diff):
-                    if idx in constraint_points.get_set(anchor_idx):
+                    # if idx in constraint_points.get_set(anchor_idx):
+                    if idx in self.constraint_graph[anchor_idx]:
                         continue  # Skip if there's a constraint
                     valid_diff_indices.append(i)
                 
@@ -443,7 +449,7 @@ class SBERTConstrainedClusteringTrainer:
                         # Fallback to random sampling if anchor mapping is empty
                         positive_pairs = random.sample(positive_pairs, min(target_positive, len(positive_pairs)))
 
-            constraint_points.close()
+            # constraint_points.close()
             
             print(f"Generated {len(positive_same_cluster)} positive same-cluster pairs")
             print(f"Generated {len(positive_diff_cluster)} positive different-cluster pairs")
@@ -623,7 +629,7 @@ class SBERTConstrainedClusteringTrainer:
     def hybrid_initialization(self,
                               model: ConstrainedKMeans,
                               new_embeddings: np.ndarray,
-                              constraints_path: str,
+                              sorted_constraints: List[Tuple[int, int]] = None,
                               reinit_fraction: float = 0.3) -> np.ndarray:
         """
         Reinitialize worst-performing centroids while keeping others
@@ -808,11 +814,13 @@ class SBERTConstrainedClusteringTrainer:
         previous_pckmeans_model = None
         previous_embeddings = None
 
+        print("Loading constraint graph and sorted constraints...", flush=True)
+
         self.constraint_graph_path = config["constraints_graph_path"]
         self.sorted_constraints_path = config["constraints_flat_path"]
 
-        # self.sorted_constraints = ConstraintFlatDB(self.sorted_constraints_path)
-        # self.constraint_graph = ConstraintGraphDB(self.constraint_graph_path)
+        self.sorted_constraints = ConstraintFlatDB(self.sorted_constraints_path).get_all_tuples_as_list()
+        self.constraint_graph = ConstraintGraphDB(self.constraint_graph_path).get_all_sets_as_dict()
 
         best_model = {
             'model': ConstrainedKMeans,
@@ -898,14 +906,14 @@ class SBERTConstrainedClusteringTrainer:
                 pckmeans_model.cluster_centers_ = init_centroids
                 # Fit with custom initialization
                 pckmeans_model.fit(embeddings,
-                                    sorted_constraints_path=self.sorted_constraints_path,
-                                    constraint_graph_path=self.constraint_graph_path,
+                                    sorted_constraints=self.sorted_constraints,
+                                    constraint_graph=self.constraint_graph,
                                     skip_init=True)
             else:
                 # Regular fit
                 pckmeans_model.fit(embeddings,
-                                    sorted_constraints_path=self.sorted_constraints_path,
-                                    constraint_graph_path=self.constraint_graph_path,
+                                    sorted_constraints=self.sorted_constraints,
+                                    constraint_graph=self.constraint_graph,
                                     skip_init=False)
 
             # Get clustering metrics
@@ -1037,25 +1045,8 @@ if __name__ == '__main__':
 
     print("Loading data for clustering...", flush=True)
 
-    # Load data
-    # with open(config["cluster_embs_path"], 'rb') as f:
-    #     data = pickle.load(f)
-
     with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
-
-    # constraints = {}
-    # with open(config["constraints_path"], "rb") as f:
-    #     while True:
-    #         try:
-    #             batch = pickle.load(f)
-    #             # Convert batch (list of tuples) to dict entries
-    #             for k1, k2 in batch:
-    #                 constraints[(k1, k2)] = 1
-    #             # Delete batch from memory after processing
-    #             del batch
-    #         except EOFError:
-    #             break
 
     framework = SBERTConstrainedClusteringTrainer(n_clusters=args.k,
                                                   w_cl=args.w,

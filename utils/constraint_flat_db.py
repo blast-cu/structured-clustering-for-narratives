@@ -41,5 +41,20 @@ class ConstraintFlatDB:
                 if not cursor.next():
                     break
 
+    def get_all_tuples_as_list(self):
+        """Read the full database and return as List[Tuple[int, int]]"""
+        tuples_list = []
+        with self.env.begin() as txn:
+            cursor = txn.cursor()
+            cursor.first()
+            while True:
+                key = cursor.key()
+                if len(key) == 8:
+                    dict_key, set_member = struct.unpack('2i', key)
+                    tuples_list.append((dict_key, set_member))
+                if not cursor.next():
+                    break
+        return tuples_list
+
     def close(self):
         self.env.close()
