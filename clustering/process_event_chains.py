@@ -129,7 +129,7 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fl
             print(f"Writing batch of size {len(batch['sorted_constraints'])} to disk...", flush=True)
             constraints_flat_db.add_tuples(batch["sorted_constraints"])
             constraints_graph_db.update_sets(batch["constraint_graph"])
-            processed_combinations += len(batch)
+            processed_combinations += len(batch["sorted_constraints"])
         
         print(f"Total constraints written: {processed_combinations}")
 

@@ -208,7 +208,7 @@ class SBERTConstrainedClusteringTrainer:
             labels = model.labels_
             
             # Use constraint structures from the class (set in train method)
-            constraint_points = self.constraint_graph
+            constraint_points = ConstraintGraphDB(self.constraint_graph_path)
             
             # Store examples
             positive_same_cluster = []
@@ -442,6 +442,8 @@ class SBERTConstrainedClusteringTrainer:
                     else:
                         # Fallback to random sampling if anchor mapping is empty
                         positive_pairs = random.sample(positive_pairs, min(target_positive, len(positive_pairs)))
+
+            constraint_points.close()
             
             print(f"Generated {len(positive_same_cluster)} positive same-cluster pairs")
             print(f"Generated {len(positive_diff_cluster)} positive different-cluster pairs")
@@ -809,8 +811,8 @@ class SBERTConstrainedClusteringTrainer:
         self.constraint_graph_path = config["constraints_graph_path"]
         self.sorted_constraints_path = config["constraints_flat_path"]
 
-        self.sorted_constraints = ConstraintFlatDB(self.sorted_constraints_path)
-        self.constraint_graph = ConstraintGraphDB(self.constraint_graph_path)
+        # self.sorted_constraints = ConstraintFlatDB(self.sorted_constraints_path)
+        # self.constraint_graph = ConstraintGraphDB(self.constraint_graph_path)
 
         best_model = {
             'model': ConstrainedKMeans,
@@ -998,8 +1000,8 @@ class SBERTConstrainedClusteringTrainer:
             # Update previous model
             previous_pckmeans_model = pckmeans_model
 
-        self.sorted_constraints.close()
-        self.constraint_graph.close()
+        # self.sorted_constraints.close()
+        # self.constraint_graph.close()
 
         return best_model
 
