@@ -806,8 +806,8 @@ class SBERTConstrainedClusteringTrainer:
         previous_pckmeans_model = None
         previous_embeddings = None
 
-        self.constraint_graph_path = config["constraint_graph_path"]
-        self.sorted_constraints_path = config["constraint_flat_path"]
+        self.constraint_graph_path = config["constraints_graph_path"]
+        self.sorted_constraints_path = config["constraints_flat_path"]
 
         self.sorted_constraints = ConstraintFlatDB(self.sorted_constraints_path)
         self.constraint_graph = ConstraintGraphDB(self.constraint_graph_path)
