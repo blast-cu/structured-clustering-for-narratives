@@ -265,7 +265,7 @@ class SBERTConstrainedClusteringTrainer:
                 # from the same cluster in a single pass
                 
                 # Get the constraints for the anchor point
-                anchor_constraints = self.constraint_graph[anchor_idx]
+                anchor_constraints = self.constraint_graph.get(anchor_idx, set())
                 # anchor_constraints = constraint_points.get_set(anchor_idx)
                 
                 # Divide same-cluster points into those with and without constraints
@@ -328,7 +328,7 @@ class SBERTConstrainedClusteringTrainer:
                 valid_diff_indices = []
                 for i, idx in enumerate(sampled_diff):
                     # if idx in constraint_points.get_set(anchor_idx):
-                    if idx in self.constraint_graph[anchor_idx]:
+                    if idx in self.constraint_graph.get(anchor_idx, set()):
                         continue  # Skip if there's a constraint
                     valid_diff_indices.append(i)
                 
@@ -779,7 +779,9 @@ class SBERTConstrainedClusteringTrainer:
               sentences: List,
               initialization_strategy: str = "",
               kmeans_params: Dict = None,
-              existing_metrics: List[Dict] = None) -> Dict:
+              existing_metrics: List[Dict] = None,
+              centroid_percentile:int=None,
+              pairwise_percentile:int=None) -> Dict:
         """
         Run the EM-style training framework
 
@@ -890,8 +892,8 @@ class SBERTConstrainedClusteringTrainer:
                 n_clusters=self.n_clusters,
                 initializer=initializer,
                 w_cl=self.w_cl,
-                centroid_percentile=25,
-                pairwise_percentile=15,
+                centroid_percentile=centroid_percentile,
+                pairwise_percentile=pairwise_percentile,
                 # constraint_graph=self.constraint_graph,
                 # sorted_constraints=self.sorted_constraints,
                 **kmeans_params
@@ -1013,7 +1015,7 @@ class SBERTConstrainedClusteringTrainer:
 
         return best_model
 
-    def save(self, config, pckmeans_model, embs):
+    def save(self, config, pckmeans_model, embs, init_strategy):
         """Save the model to a file."""
 
         print("Saving clustering results...", flush=True)
@@ -1021,13 +1023,15 @@ class SBERTConstrainedClusteringTrainer:
         output = {
             "number_cluster": self.n_clusters,
             "w_cl": self.w_cl,
+            "centroid_percentile":pckmeans_model.centroid_percentile,
+            "pairwise_percentile":pckmeans_model.pairwise_percentile,
             "cluster_centers": pckmeans_model.cluster_centers_,
             "labels": pckmeans_model.labels_,
-            "updated_embeddings": embs,
+            "embeddings": embs,
             "violations": pckmeans_model.get_violation_statistics()
         }
 
-        with open(config["clusters_path"] + f"em_clusters_{self.n_clusters}_{self.w_cl}.pickle", 'wb') as f:
+        with open(config["clusters_path"] + f"em_clusters_{self.n_clusters}_{self.w_cl}_{pckmeans_model.centroid_percentile}_{pckmeans_model.pairwise_percentile}_{init_strategy}.pickle", 'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
@@ -1036,12 +1040,18 @@ if __name__ == '__main__':
     parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
     parser.add_argument('-i', metavar='MAX_ITER', default=5, type=int, help='maximum number of iterations')
     parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
+    parser.add_argument('--centroid_percentile', metavar='CENTROID_PERCENTILE', default=None, type=float, help='percentile threshold for distance to cluster centers (e.g., 25 for top 25%)')
+    parser.add_argument('--pairwise_percentile', metavar='PAIRWISE_PERCENTILE', default=None, type=float, help='percentile threshold for pairwise distances (e.g., 10 for bottom 10%)')
+    parser.add_argument('--init_strategy', metavar='INIT_STRATEGY', default='', type=str, help='initialization strategy (e.g., "scikit_kmeans", "from_scratch", "hybrid", "warm_start")')
+
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     print("N_CLUSTERS: " + str(args.k), flush=True)
     print("W_CL: " + str(args.w), flush=True)
+    print("CENTROID_PERCENTILE: " + str(args.centroid_percentile), flush=True)
+    print("PAIRWISE_PERCENTILE: " + str(args.pairwise_percentile), flush=True)
 
     print("Loading data for clustering...", flush=True)
 
@@ -1058,6 +1068,6 @@ if __name__ == '__main__':
 
     best_model = framework.train(config,
                                  data["chain_sents"], 
-                                 initialization_strategy="scikit_kmeans")
+                                 initialization_strategy=args.init_strategy)
 
-    framework.save(config, best_model['model'], best_model['embs'])
+    framework.save(config, best_model['model'], best_model['embs'], args.init_strategy)

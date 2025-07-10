@@ -9,7 +9,7 @@
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
 #SBATCH --gres=gpu:1
-#SBATCH --mem=70G
+#SBATCH --mem=50G
 #SBATCH --job-name=cluster_chains
 #SBATCH --output=logs/cluster.%j.log
 
@@ -32,7 +32,11 @@ export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 # python3 ./clustering/process_event_chains.py -c "mfc_immigration"
 
-python3 ./clustering/finetuned_pckmeans.py -c "mfc_immigration" -k 1000 -w 0.001
+# python3 ./clustering/finetuned_pckmeans.py -c "mfc_immigration" -k 250 -w 0.01 --init_strategy "scikit_kmeans"
+
+# python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k 250 -w 0.01 --centroid_percentile 25 --pairwise_percentile 15 --skip_init
+
+python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k 250 -w 2.0
 
 # python3 ./clustering/kmeans.py -c "immigration" -k $1
 

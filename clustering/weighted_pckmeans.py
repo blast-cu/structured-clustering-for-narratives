@@ -6,6 +6,7 @@ from typing import Optional, List, Tuple, Dict, Set
 import numpy as np
 import numpy.typing as npt
 from pyhocon import ConfigFactory
+from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
@@ -481,7 +482,7 @@ class ConstrainedKMeans:
             "violation_frequency": violation_frequency
         }
 
-    def save(self, config):
+    def save(self, config, embeddings, skip_init):
         """Save the model to a file."""
 
         print("Saving clustering results...", flush=True)
@@ -489,12 +490,19 @@ class ConstrainedKMeans:
         output = {
             "number_cluster": self.n_clusters,
             "w_cl": self.w_cl,
+            "centroid_percentile":self.centroid_percentile,
+            "pairwise_percentile":self.pairwise_percentile,
             "cluster_centers": self.cluster_centers_,
             "labels": self.labels_,
+            "embeddings": embeddings,
             "violations": self.get_violation_statistics()
         }
 
-        with open(config["clusters_path"] + f"clusters_{self.n_clusters}_{self.w_cl}.pickle", 'wb') as f:
+        if skip_init:
+            skip="skip"
+        else:
+            skip=""
+        with open(config["clusters_path"] + f"clusters_{self.n_clusters}_{self.w_cl}_{skip}.pickle", 'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
@@ -505,9 +513,12 @@ if __name__ == '__main__':
     parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
     parser.add_argument('--centroid_percentile', metavar='CENTROID_PERCENTILE', default=None, type=float, help='percentile threshold for distance to cluster centers (e.g., 25 for top 25%)')
     parser.add_argument('--pairwise_percentile', metavar='PAIRWISE_PERCENTILE', default=None, type=float, help='percentile threshold for pairwise distances (e.g., 10 for bottom 10%)')
+    parser.add_argument('--skip_init', action='store_true', help='skip initialization and use scikit-learn KMeans for initialization')
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
+
+    print("Running Weighted PCKmeans Clustering with the following parameters:", flush=True)
 
     print("N_CLUSTERS: " + str(args.k), flush=True)
     print("W_CL: " + str(args.w), flush=True)
@@ -547,12 +558,21 @@ if __name__ == '__main__':
         pairwise_percentile=args.pairwise_percentile
     )
 
-    sorted_constraints = ConstraintFlatDB("constraints_flat_path").get_all_tuples_as_list()
-    constraint_graph = ConstraintGraphDB("constraints_graph_path").get_all_sets_as_dict()
+    sorted_constraints = ConstraintFlatDB(config["constraints_flat_path"]).get_all_tuples_as_list()
+    constraint_graph = ConstraintGraphDB(config["constraints_graph_path"]).get_all_sets_as_dict()
+
+    print("skip_init: " + str(args.skip_init), flush=True)
+
+    if args.skip_init:
+        print("Using scikit-learn KMeans for initialization...", flush=True)
+        sk_kmeans = KMeans(n_clusters=args.k, random_state=config["seed"], init='k-means++', n_init=5)
+        sk_kmeans.fit(embeddings)
+        model.cluster_centers_ = sk_kmeans.cluster_centers_
 
     # Fit the model
     model.fit(X=embeddings,
               sorted_constraints=sorted_constraints,
-              constraint_graph=constraint_graph)
+              constraint_graph=constraint_graph,
+              skip_init=args.skip_init)
 
-    model.save(config)
+    model.save(config, embeddings, args.skip_init)
