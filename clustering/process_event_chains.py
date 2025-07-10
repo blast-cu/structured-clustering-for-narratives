@@ -90,7 +90,7 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fl
     # Define normalize_group function once
     def normalize_group(group):
         immigration_groups = {'Immigrants', 'Refugees', 'Asylum Seekers', 'Workers'}
-        return 'Immigration_People' if group in immigration_groups else group
+        return schemas.ImmigrationCharacterGroup.IMMIGRANTS if group in immigration_groups else group
     
     # Pre-compute candidates, resolutions, and normalizations for all chains
     print("Pre-computing chain group roles...")
@@ -105,14 +105,15 @@ def compute_constraints(processed_chains, normalize_groups=False, constraints_fl
         
         # Resolve character group conflicts
         candidates = resolve_character_groups(candidates)
-        
-        # Add stance to the resolved groups
-        for group in candidates:
-            candidates[group] = {'role': candidates[group], 'stance': stance}
-        
+
         # Normalize groups (optional)
         if normalize_groups:
             candidates = {normalize_group(group): role for group, role in candidates.items()}
+
+        candidates = {char_group.value : role.value for char_group, role in candidates.items()}
+        if stance.value != 'Neutral':
+            # Add stance to the candidates
+            candidates['Stance'] = stance.value
 
         chain_group_roles[chain_id] = candidates
     

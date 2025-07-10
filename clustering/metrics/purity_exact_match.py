@@ -48,7 +48,7 @@ def generate_clusters(clustering_data, top_k=25):
         clusters_top_k[cluster_idx] = closest_indices_global
     return clusters, clusters_top_k
 
-def calculate_cluster_purity(chain_data, clusters, clustering_data, top_k=False):
+def get_exact_match_purity(chain_data, clusters, clustering_data, top_k=False):
     chain_group_roles = chain_data["chain_group_roles"]
     if top_k:
         chain_group_roles_top_k = {}
@@ -57,62 +57,57 @@ def calculate_cluster_purity(chain_data, clusters, clustering_data, top_k=False)
                 chain_group_roles_top_k[idx] = chain_group_roles[idx]
         chain_group_roles = chain_group_roles_top_k
 
-    # Extract all unique keys from the dataset
-    all_keys = set()
-    for dp in chain_group_roles.values():
-        all_keys.update(dp.keys())
-    all_keys = sorted(all_keys)
-    
-    print(f"Found keys: {all_keys}")
+    # Convert to sorted tuples for canonical representation
+    def canonicalize_data_point(dp):
+        # Handle nested dict structure: {group: {'role': role, 'stance': stance}}
+        items = []
+        for group, info in dp.items():
+            if isinstance(info, dict):
+                # Create a canonical representation of the nested dict
+                canonical_info = tuple(sorted(info.items()))
+                items.append((group, canonical_info))
+            else:
+                items.append((group, info))
+        return tuple(sorted(items))
 
-    # Group data points by cluster
-    cluster_data = {}
-    for chain_id, data_point in chain_group_roles.items():
-        if top_k:
-            cluster_label = clustering_data['labels'][chain_id]
-        else:
-            cluster_label = clustering_data['labels'][chain_id]
-        
-        if cluster_label not in cluster_data:
-            cluster_data[cluster_label] = []
-        cluster_data[cluster_label].append(data_point)
+    # Find unique combinations and create class mapping
+    unique_classes = list(set(canonicalize_data_point(dp) for dp in chain_group_roles.values()))
+    class_mapping = {pattern: i for i, pattern in enumerate(unique_classes)}
 
-    # Calculate purity for each key
-    key_purities = {}
+    # Create true labels (ground truth classes)
+    true_labels = []
+    for chain_id in sorted(chain_group_roles.keys()):
+        canonical = canonicalize_data_point(chain_group_roles[chain_id])
+        class_label = class_mapping[canonical]
+        true_labels.append(class_label)
+
+    # Get predicted labels (cluster assignments) - ensure same ordering
+    if top_k:
+        # Generate predicted labels only for the selected top_k indices
+        predicted_labels = []
+        for chain_id in sorted(chain_group_roles.keys()):
+            # Find which cluster this chain_id belongs to
+            original_cluster_label = clustering_data['labels'][chain_id]
+            predicted_labels.append(original_cluster_label)
+    else:
+        predicted_labels = clustering_data['labels']
     
-    for key in all_keys:
-        cluster_purities_for_key = []
-        
-        for cluster_label, cluster_points in cluster_data.items():
-            # Get all values for this key in this cluster
-            key_values = []
-            for point in cluster_points:
-                if key in point:
-                    key_values.append(point[key])
-            
-            if key_values:
-                # Find the most frequent value
-                from collections import Counter
-                value_counts = Counter(key_values)
-                most_common_count = value_counts.most_common(1)[0][1]
-                cluster_purity = most_common_count / len(key_values)
-                cluster_purities_for_key.append(cluster_purity)
-        
-        # Average purity across all clusters for this key
-        if cluster_purities_for_key:
-            key_purity = np.mean(cluster_purities_for_key)
-            key_purities[key] = key_purity
+    # Verify same number of data points
+    if len(true_labels) != len(predicted_labels):
+        raise ValueError(f"Mismatch: {len(true_labels)} true labels vs {len(predicted_labels)} predicted labels")
+
+    # Create the confusion matrix (rows=true classes, cols=predicted clusters)
+    cm = confusion_matrix(true_labels, predicted_labels)
     
-    # Calculate overall average purity
-    overall_purity = np.mean(list(key_purities.values()))
+    print(f"Confusion matrix shape: {cm.shape}")
+    print(f"Number of unique true classes: {len(unique_classes)}")
+    print(f"Number of clusters: {len(set(predicted_labels))}")
+
+    # Calculate purity: for each cluster, take the most frequent true class
+    cluster_purity = np.sum(np.max(cm, axis=0)) / np.sum(cm)
     
-    # Print results
-    print(f"Purity per key:")
-    for key, purity in key_purities.items():
-        print(f"  {key}: {purity:.4f}")
-    print(f"Overall purity: {overall_purity:.4f}")
-    
-    return key_purities, overall_purity
+    print(f"Cluster purity: {cluster_purity:.4f}")
+    return cluster_purity
 
 
 if __name__ == "__main__":
@@ -124,4 +119,4 @@ if __name__ == "__main__":
 
     chain_data, clustering_data = load_data(config)
     clusters, clusters_top_k = generate_clusters(clustering_data, top_k=25)
-    calculate_cluster_purity(chain_data, clusters_top_k, clustering_data, top_k=True)
+    get_exact_match_purity(chain_data, clusters_top_k, clustering_data, top_k=True)
