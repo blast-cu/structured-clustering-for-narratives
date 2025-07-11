@@ -29,7 +29,7 @@ class SBERTConstrainedClusteringTrainer:
     def __init__(self,
                  base_model_name: str = 'all-MiniLM-L6-v2',
                  max_iterations: int = 10,
-                 positive_threshold: float = 0.7,
+                 positive_threshold: float = 0.75,
                  negative_threshold: float = 0.5,
                  batch_size: int = 16,
                  epochs_per_iteration: int = 10,
@@ -671,7 +671,7 @@ class SBERTConstrainedClusteringTrainer:
             w_cl=model.w_cl
         )
         reinit_centroids = initializer.initialize(
-            new_embeddings, n_reinit, constraints_path, random_state=42
+            new_embeddings, n_reinit, sorted_constraints, random_state=42
         )
 
         for i, cluster_id in enumerate(clusters_to_reinit):
@@ -795,10 +795,14 @@ class SBERTConstrainedClusteringTrainer:
         Returns:
             Dictionary containing final model, SBERT model, and metrics
         """
+
+        print("Centroid Distance Threshold:", self.centroid_distance_threshold, flush=True)
+        print("Max Anchors:", self.max_anchors, flush=True)
+
         # Set default KMeans parameters
         if kmeans_params is None:
             kmeans_params = {
-                'max_iter': 10,
+                'max_iter': 100,
                 'tol': 1e-4,
                 'early_stopping_tol': 5,
                 'random_state': 42
@@ -1031,7 +1035,9 @@ class SBERTConstrainedClusteringTrainer:
             "violations": pckmeans_model.get_violation_statistics()
         }
 
-        with open(config["clusters_path"] + f"em_clusters_{self.n_clusters}_{self.w_cl}_{pckmeans_model.centroid_percentile}_{pckmeans_model.pairwise_percentile}_{init_strategy}.pickle", 'wb') as f:
+        with open(config["clusters_path"] + f"em_clusters_{self.n_clusters}_{self.w_cl}_{init_strategy}_"
+                                            f"{self.centroid_distance_threshold}_{self.max_anchors}.pickle",
+                  'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
 
 if __name__ == '__main__':
@@ -1042,7 +1048,8 @@ if __name__ == '__main__':
     parser.add_argument('-w', metavar='W_CL', default=1.0, type=float, help='weight for cannot-link constraints')
     parser.add_argument('--centroid_percentile', metavar='CENTROID_PERCENTILE', default=None, type=float, help='percentile threshold for distance to cluster centers (e.g., 25 for top 25%)')
     parser.add_argument('--pairwise_percentile', metavar='PAIRWISE_PERCENTILE', default=None, type=float, help='percentile threshold for pairwise distances (e.g., 10 for bottom 10%)')
-    parser.add_argument('--init_strategy', metavar='INIT_STRATEGY', default='', type=str, help='initialization strategy (e.g., "scikit_kmeans", "from_scratch", "hybrid", "warm_start")')
+    parser.add_argument('--init_strategy', metavar='INIT_STRATEGY', default='from_scratch', type=str,
+                        help='initialization strategy (e.g., "scikit_kmeans", "from_scratch", "hybrid", "warm_start")')
 
 
     args = parser.parse_args()

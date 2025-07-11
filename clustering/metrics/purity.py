@@ -21,7 +21,7 @@ def load_data(config):
     #         except EOFError:
     #             break
 
-    with open(config["clusters_path"] + "clusters_1000_0.0.pickle", "rb") as f:
+    with open(config["clusters_path"] + "em_clusters_250_0.01_None_None_scikit_kmeans.pickle", "rb") as f:
         clustering_data = pickle.load(f)
 
     return chain_data, clustering_data
@@ -109,8 +109,8 @@ def calculate_cluster_purity(chain_data, clusters, clustering_data, top_k=False)
     # Print results
     print(f"Purity per key:")
     for key, purity in key_purities.items():
-        print(f"  {key}: {purity:.4f}")
-    print(f"Overall purity: {overall_purity:.4f}")
+        print(f"  {key}: {purity * 100:.2f}")
+    print(f"Overall purity: {overall_purity * 100:.2f}")
     
     return key_purities, overall_purity
 
@@ -123,5 +123,5 @@ if __name__ == "__main__":
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     chain_data, clustering_data = load_data(config)
-    clusters, clusters_top_k = generate_clusters(clustering_data, top_k=25)
+    clusters, clusters_top_k = generate_clusters(clustering_data, top_k=100)
     calculate_cluster_purity(chain_data, clusters_top_k, clustering_data, top_k=True)

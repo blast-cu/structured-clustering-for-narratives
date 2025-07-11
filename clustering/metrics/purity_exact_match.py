@@ -21,7 +21,7 @@ def load_data(config):
     #         except EOFError:
     #             break
 
-    with open(config["clusters_path"] + "clusters_1000_0.0.pickle", "rb") as f:
+    with open(config["clusters_path"] + "em_clusters_250_0.01_None_None_scikit_kmeans.pickle", "rb") as f:
         clustering_data = pickle.load(f)
 
     return chain_data, clustering_data
@@ -106,7 +106,7 @@ def get_exact_match_purity(chain_data, clusters, clustering_data, top_k=False):
     # Calculate purity: for each cluster, take the most frequent true class
     cluster_purity = np.sum(np.max(cm, axis=0)) / np.sum(cm)
     
-    print(f"Cluster purity: {cluster_purity:.4f}")
+    print(f"Cluster purity: {cluster_purity * 100:.2f}")
     return cluster_purity
 
 
@@ -118,5 +118,5 @@ if __name__ == "__main__":
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     chain_data, clustering_data = load_data(config)
-    clusters, clusters_top_k = generate_clusters(clustering_data, top_k=25)
+    clusters, clusters_top_k = generate_clusters(clustering_data, top_k=100)
     get_exact_match_purity(chain_data, clusters_top_k, clustering_data, top_k=True)
