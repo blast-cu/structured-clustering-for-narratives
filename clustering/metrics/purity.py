@@ -108,7 +108,7 @@ class Purity:
         # Calculate purity: for each cluster, take the most frequent true class
         cluster_purity = np.sum(np.max(cm, axis=0)) / np.sum(cm)
 
-        print(f"Cluster purity: {cluster_purity * 100:.2f}")
+        print(f"Exact Match purity: {cluster_purity * 100:.2f}")
 
         return cluster_purity
 
@@ -174,7 +174,7 @@ class Purity:
         print(f"Purity per key:")
         for key, purity in key_purities.items():
             print(f"  {key}: {purity * 100:.2f}")
-        print(f"Overall purity: {overall_purity * 100:.2f}")
+        print(f"Overall role purity: {overall_purity * 100:.2f}")
         
         return key_purities, overall_purity
 
@@ -223,7 +223,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    with open(config["clusters_path"] + "em_clusters_250_0.5_from_scratch_0.5_10000.pickle", "rb") as f:
+    with open(config["clusters_path"] + "clusters_250_0.5_.pickle", "rb") as f:
         clustering_data = pickle.load(f)
 
     purity = Purity(config["processed_chains_path"], clustering_data)

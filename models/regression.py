@@ -1,164 +1,119 @@
 import argparse
-import json
-import os
 import pickle
-import time
+import random
 
+import numpy as np
 import pandas as pd
-from filelock import FileLock
 from numpy import mean, std
 from pyhocon import ConfigFactory
 from sklearn import preprocessing, metrics
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split, RepeatedStratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
 
-def create_dataset(num_clusters, constraint_weight):
-    print("Creating dataset...")
+class RegressionModel:
+    def __init__(self, config):
+        self.config = config
+        random.seed(self.config["seed"])
+        np.random.seed(self.config["seed"])
 
-    with open("./data/immigration/annotated_event_chains.pickle", 'rb') as f:
-        annotated_event_chains = pickle.load(f)
+    def create_dataset(self, config, clustering_data):
+        print("Creating dataset...", flush=True)
 
-    with open(f"./data/immigration/em_clusters_{num_clusters}_{constraint_weight}.pickle", 'rb') as f:
-        clusters = pickle.load(f)
+        with open(self.config["relations_path"], 'rb') as f:
+            corpus = pickle.load(f)
 
-    with open("./data/immigration/embeddings.pickle", 'rb') as f:
-        embeddings = pickle.load(f)
+        with open(config["processed_chains_path"], 'rb') as f:
+            processed_chains = pickle.load(f)
 
-    corpus = {}
-    for chain_idx in embeddings['chain_to_doc']:
-        doc_key = embeddings['chain_to_doc'][chain_idx]
-        if doc_key not in corpus:
-            doc = annotated_event_chains[doc_key]
-            corpus[doc_key] = {
-                "primary_frame": doc['primary_frame'],
-                "event_chain_clusters": {}
-            }
-        cluster = clusters['labels'][chain_idx]
-        if cluster not in corpus[doc_key]["event_chain_clusters"]:
-            corpus[doc_key]["event_chain_clusters"][cluster] = 1
-        else:
-            corpus[doc_key]["event_chain_clusters"][cluster] += 1
+        dataset = {}
+        for chain_idx in processed_chains['processed_chains']:
+            doc_key = processed_chains['processed_chains'][chain_idx]['doc_id']
+            if doc_key not in dataset:
+                doc = corpus[doc_key]
+                dataset[doc_key] = {
+                    "primary_frame": doc['primary_frame'],
+                    "event_chain_clusters": {}
+                }
+            cluster = clustering_data['labels'][chain_idx]
+            if cluster not in dataset[doc_key]["event_chain_clusters"]:
+                dataset[doc_key]["event_chain_clusters"][cluster] = 1
+            else:
+                dataset[doc_key]["event_chain_clusters"][cluster] += 1
 
-    data_dict = []
-    for doc_key in corpus:
-        doc = corpus[doc_key]
-        article = {}
-        for i in range(num_clusters):
-            key = 'Cluster ' + str(i)
-            article[key] = 0
-        for cluster in doc['event_chain_clusters']:
-            article['Cluster ' + str(cluster)] = doc['event_chain_clusters'][cluster]
-        article['frame'] = doc['primary_frame']
-        data_dict.append(article)
-    data = pd.DataFrame.from_dict(data_dict)
+        data_dict = []
+        for doc_key in dataset:
+            doc = dataset[doc_key]
+            article = {}
+            for i in range(clustering_data['number_cluster']):
+                key = 'Cluster ' + str(i)
+                article[key] = 0
+            for cluster in doc['event_chain_clusters']:
+                article['Cluster ' + str(cluster)] = doc['event_chain_clusters'][cluster]
+            article['frame'] = doc['primary_frame']
+            data_dict.append(article)
+        data = pd.DataFrame.from_dict(data_dict)
 
+        return data
 
-    return data
+    def regression(self, config, data):
+        print("Running regression...", flush=True)
+        label_encoder = preprocessing.LabelEncoder()
+        data['frame'] = label_encoder.fit_transform(data['frame'])
+        label_mapping = dict(zip(label_encoder.classes_, label_encoder.transform(label_encoder.classes_)))
+        for k, v in label_mapping.items():
+            print(v, ' : ', k, flush=True)
 
-def regression(data, config, num_clusters, constraint_weight, save_results):
-    print("Running regression...")
-    label_encoder = preprocessing.LabelEncoder()
-    data['frame'] = label_encoder.fit_transform(data['frame'])
-    label_mapping = dict(zip(label_encoder.classes_, label_encoder.transform(label_encoder.classes_)))
-    for k, v in label_mapping.items():
-        print(v, ' : ', k)
+        X = data.iloc[:, :-1]
+        y = data.iloc[:, -1]
 
-    X = data.iloc[:, :-1]
-    y = data.iloc[:, -1]
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=config['seed'])
+        
+        print(f"Train set size: {len(X_train)}", flush=True)
+        print(f"Test set size: {len(X_test)}", flush=True)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=config['seed'])
+        # Create pipeline to avoid data leakage in cross-validation
+        pipeline = Pipeline([
+            ('scaler', StandardScaler()),
+            ('classifier', LogisticRegression(solver='lbfgs', penalty='l2', C=0.5))
+        ])
 
-    scaler = StandardScaler()
-    scaler.fit(X_train)
-    X_train_scaled = scaler.transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
+        # define the model evaluation procedure
+        cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=5, random_state=config['seed'])
+        # evaluate the model and collect the scores (pipeline handles scaling within each fold)
+        accuracy_scores = cross_val_score(pipeline, X_train, y_train, scoring='accuracy', cv=cv, n_jobs=-1)
+        f1_scores = cross_val_score(pipeline, X_train, y_train, scoring='f1_macro', cv=cv, n_jobs=-1)
+        # report the model performance
+        print('Mean Train Accuracy: %.2f (%.2f)' % (mean(accuracy_scores) * 100, std(accuracy_scores) * 100), flush=True)
+        print('Mean Train F1: %.2f (%.2f)' % (mean(f1_scores) * 100, std(f1_scores) * 100), flush=True)
 
-    # feature_selection(config, X_train_scaled, y_train, label_mapping)
+        pipeline.fit(X_train, y_train)
+        y_pred = pipeline.predict(X_test)
+        test_accuracy = round(metrics.accuracy_score(y_test.to_numpy(), y_pred) * 100, 2)
+        f1_score = round(metrics.f1_score(y_test.to_numpy(), y_pred, average='macro') * 100, 2)
 
-    model = LogisticRegression(solver='lbfgs', penalty='l2', C=0.5)
+        print(f"Test Accuracy: {test_accuracy}", flush=True)
+        print(f"F1 Score: {f1_score}", flush=True)
+        print(metrics.classification_report(y_test.to_numpy(), y_pred), flush=True)
 
-    # # define the model evaluation procedure
-    # cv = RepeatedStratifiedKFold(n_splits=5, n_repeats=3, random_state=42)
-    # # evaluate the model and collect the scores
-    # n_scores = cross_val_score(model, X_train_scaled, y_train, scoring='accuracy', cv=cv, n_jobs=-1)
-    # # report the model performance
-    # print('Mean Train Accuracy: %.3f (%.3f)' % (mean(n_scores), std(n_scores)))
+        return test_accuracy, f1_score
 
-    model.fit(X_train_scaled, y_train)
-    Y_pred = model.predict(X_test_scaled)
-    test_accuracy = round(metrics.accuracy_score(y_test.to_numpy(), Y_pred), 2)
-    f1_score = round(metrics.f1_score(y_test.to_numpy(), Y_pred, average='macro'), 2)
-
-    print(f"Test Accuracy for num_clusters={num_clusters}, constraint_weight={constraint_weight}: {test_accuracy}")
-    print(metrics.classification_report(y_test.to_numpy(), Y_pred))
-
-    print(metrics.classification_report(y_test.to_numpy(), Y_pred))
-
-    # Log the results
-    if save_results:
-        log_results(num_clusters, constraint_weight, test_accuracy, f1_score, config)
-
-def log_results(num_clusters, constraint_weight, accuracy, f1_score, config):
-    """
-    Log the results to a JSON file in a thread-safe manner using filelock.
-
-    Args:
-        num_clusters: Number of clusters used
-        constraint_weight: Constraint weight for clustering
-        accuracy: Test accuracy
-        results_file: Path to the results file
-    """
-    # Create a new result entry
-    new_result = {
-        "num_clusters": num_clusters,
-        "constraint_weight": constraint_weight,
-        "accuracy": accuracy,
-        "macro_f1_score": f1_score,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-    results_file = config["grid_search_path"]
-
-    # Define lock file
-    lock_file = f"{results_file}.lock"
-
-    # Use filelock for thread-safe file access
-    with FileLock(lock_file, timeout=10):
-        # Read existing results if file exists
-        results = []
-        if os.path.exists(results_file) and os.path.getsize(results_file) > 0:
-            try:
-                with open(results_file, 'r') as f:
-                    results = json.load(f)
-            except json.JSONDecodeError:
-                # File exists but is corrupted
-                print(f"Warning: Results file corrupted. Creating new file.", flush=True)
-                results = []
-
-        # Add new result
-        results.append(new_result)
-
-        # Write updated results to file
-        with open(results_file, 'w') as f:
-            json.dump(results, f, indent=2)
-
-    print(f"Results logged successfully to {results_file}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Regression")
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
-    parser.add_argument('-k', type=int, default=250, help='number of clusters to use')
-    parser.add_argument('-w', type=float, default=1.0, help='constraint weight for clustering')
-    parser.add_argument('--save_results', action='store_true', help='save results to file')
     args = parser.parse_args()
 
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    print(f"Running regression with:")
-    print(f"  - Number of clusters: {args.k}")
-    print(f"  - Constraint weight: {args.w}")
+    print(f"Running regression with:", flush=True)
 
-    data = create_dataset(args.k, args.w)
-    regression(data, config, args.k, args.w, args.save_results)
+    model = RegressionModel(config)
+
+    with open("./data/mfc/immigration/clustering/clusters_250_0.5_.pickle", 'rb') as f:
+        clustering_data = pickle.load(f)
+
+    data = model.create_dataset(config, clustering_data)
+    model.regression(config, data)
