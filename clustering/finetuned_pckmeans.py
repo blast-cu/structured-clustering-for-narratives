@@ -12,7 +12,6 @@ from pyhocon import ConfigFactory
 from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
 from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss
-from tqdm import tqdm
 
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
 from clustering.weighted_pckmeans import ConstrainedKMeans
@@ -251,7 +250,7 @@ class SBERTConstrainedClusteringTrainer:
                 print(f"Sampled {len(anchor_indices)} random anchor points...", flush=True)
             
             print("Generating training examples for each anchor point...", flush=True)
-            for anchor_idx in tqdm(anchor_indices):
+            for anchor_idx in anchor_indices:
                 anchor_cluster = labels[anchor_idx]
                 
                 # Get all points in the same cluster
