@@ -38,7 +38,7 @@ class SBERTConstrainedClusteringTrainer:
                  learning_rate: float = 2e-5,
                  save_dir: str = 'results',
                  # Example memory parameters
-                 max_example_memory: int = 5000,
+                 max_example_memory: int = 10000,
                  memory_decay_factor: float = 0.0,
                  # Dataset generation parameters
                  max_anchors: int = 10000,
@@ -1103,7 +1103,7 @@ if __name__ == '__main__':
     parser.add_argument('--pairwise_percentile', metavar='PAIRWISE_PERCENTILE', default=None, type=float, help='percentile threshold for pairwise distances (e.g., 10 for bottom 10%)')
     parser.add_argument('--init_strategy', metavar='INIT_STRATEGY', default='from_scratch', type=str,
                         help='initialization strategy (e.g., "scikit_kmeans", "from_scratch", "hybrid", "warm_start")')
-    parser.add_argument('--best_model_criteria', metavar='BEST_MODEL_CRITERIA', default='constraint_violations', type=str,
+    parser.add_argument('--best_model_criteria', metavar='BEST_MODEL_CRITERIA', default='purity', type=str,
                         help='criteria for selecting best model: "constraint_violations" or "purity"')
 
 
@@ -1122,7 +1122,8 @@ if __name__ == '__main__':
 
     framework = SBERTConstrainedClusteringTrainer(n_clusters=args.k,
                                                   w_cl=args.w,
-                                                  use_all_anchors=False,
+                                                  use_all_anchors=True,
+                                                  centroid_distance_threshold=1.0,
                                                   sample_near_centroids=True,
                                                   progressive_init=False,
                                                   memory_decay_factor=1.0,

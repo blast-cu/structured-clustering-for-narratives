@@ -32,15 +32,15 @@ class Purity:
     def generate_clusters(self, top_k=25):
         # create a dictionary to hold clusters, populate keys with number of clusters
         clusters = {i: [] for i in range(self.clustering_data["number_cluster"])}
-        for idx, label in enumerate(clustering_data["labels"]):
+        for idx, label in enumerate(self.clustering_data["labels"]):
             clusters[label].append(idx)
 
         clusters_top_k = {}
         for cluster_idx, cluster in clusters.items():
             # Get embeddings only for points in this cluster
-            cluster_embs = clustering_data["embeddings"][cluster]
+            cluster_embs = self.clustering_data["embeddings"][cluster]
             # Get centroid for this specific cluster
-            centroid_emb = clustering_data["cluster_centers"][cluster_idx]
+            centroid_emb = self.clustering_data["cluster_centers"][cluster_idx]
             # Calculate distances from cluster points to their centroid
             distances = np.linalg.norm(cluster_embs - centroid_emb, axis=1)
 
@@ -89,10 +89,10 @@ class Purity:
             predicted_labels = []
             for chain_id in sorted(chain_group_roles.keys()):
                 # Find which cluster this chain_id belongs to
-                original_cluster_label = clustering_data['labels'][chain_id]
+                original_cluster_label = self.clustering_data['labels'][chain_id]
                 predicted_labels.append(original_cluster_label)
         else:
-            predicted_labels = clustering_data['labels']
+            predicted_labels = self.clustering_data['labels']
 
         # Verify same number of data points
         if len(true_labels) != len(predicted_labels):
@@ -133,9 +133,9 @@ class Purity:
         cluster_data = {}
         for chain_id, data_point in chain_group_roles.items():
             if top_k:
-                cluster_label = clustering_data['labels'][chain_id]
+                cluster_label = self.clustering_data['labels'][chain_id]
             else:
-                cluster_label = clustering_data['labels'][chain_id]
+                cluster_label = self.clustering_data['labels'][chain_id]
 
             if cluster_label not in cluster_data:
                 cluster_data[cluster_label] = []
@@ -182,7 +182,7 @@ class Purity:
         for k in [25, 100]:
             print(f"Computing purity for top_k={k}...")
 
-            _, clusters_top_k = purity.generate_clusters(top_k=k)
+            _, clusters_top_k = self.generate_clusters(top_k=k)
             exact_match_purity = self.get_exact_match_purity(clusters_top_k, top_k=True)
             key_purities, overall_purity = self.calculate_cluster_purity(clusters_top_k, top_k=True)
 
