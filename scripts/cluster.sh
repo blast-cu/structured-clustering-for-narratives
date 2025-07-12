@@ -4,12 +4,11 @@
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=8
+#SBATCH --ntasks-per-node=4
 #SBATCH --time=7-00:00:00
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
-###SBATCH --gres=gpu:1
-#SBATCH --mem=30G
+#SBATCH --mem=20G
 #SBATCH --job-name=cluster_chains
 #SBATCH --output=logs/cluster.%j.log
 
@@ -28,10 +27,10 @@ export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 # Clustering chains
 
-python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k $1 -w $2
+# python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k $1 -w $2 --skip_init
 
 # python3 ./clustering/finetuned_pckmeans.py -c "mfc_immigration" -k $1 -w $2
 
-# python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k 250 -w 0.5
+python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k 50 -w 0.5 --skip_init
 
 # python3 ./clustering/finetuned_pckmeans.py -c "mfc_immigration" -k 250 -w 0.5

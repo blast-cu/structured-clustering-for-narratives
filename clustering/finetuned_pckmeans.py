@@ -190,7 +190,7 @@ class SBERTConstrainedClusteringTrainer:
         return np.dot(emb_i, emb_j) / (norm_i * norm_j)
 
     def generate_training_examples(self, 
-                                    data: Dict, 
+                                    # data: Dict, 
                                     model: 'ConstrainedKMeans',
                                     embeddings: Optional[np.ndarray] = None) -> Dict:
             """
@@ -212,9 +212,9 @@ class SBERTConstrainedClusteringTrainer:
             Returns:
                 Dictionary containing positive and negative pairs
             """
-            # Use updated embeddings if provided
-            if embeddings is None:
-                embeddings = data['embs']
+            # # Use updated embeddings if provided
+            # if embeddings is None:
+            #     embeddings = data['embs']
             
             labels = model.labels_
             
@@ -758,7 +758,7 @@ class SBERTConstrainedClusteringTrainer:
             warmup_steps=self.warmup_steps,
             weight_decay=0.01,
             logging_dir=os.path.join(output_dir, "logs"),
-            logging_steps=100,
+            logging_steps=5000,
             greater_is_better=False,
             learning_rate=self.learning_rate,
             report_to=[],
@@ -986,9 +986,7 @@ class SBERTConstrainedClusteringTrainer:
 
             # Generate training examples
             print("Generating training examples...", flush=True)
-            new_examples = self.generate_training_examples(
-                data, pckmeans_model, embeddings
-            )
+            new_examples = self.generate_training_examples(pckmeans_model, embeddings)
 
             print(f"Generated {len(new_examples['positive_pairs'])} positive pairs and "
                   f"{len(new_examples['negative_pairs'])} negative pairs", flush=True)

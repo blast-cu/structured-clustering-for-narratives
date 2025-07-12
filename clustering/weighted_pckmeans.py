@@ -565,7 +565,7 @@ if __name__ == '__main__':
 
     sorted_constraints = ConstraintFlatDB(config["constraints_flat_path"]).get_all_tuples_as_list()
     constraint_graph = ConstraintGraphDB(config["constraints_graph_path"]).get_all_sets_as_dict()
-
+    print("Number of constraints: " + str(len(sorted_constraints)), flush=True)
     print("skip_init: " + str(args.skip_init), flush=True)
 
     if args.skip_init:
