@@ -1010,9 +1010,7 @@ class SBERTConstrainedClusteringTrainer:
                 self.negative_threshold = temp_neg_threshold
 
                 # Try again
-                new_examples = self.generate_training_examples(
-                    data, pckmeans_model, embeddings
-                )
+                new_examples = self.generate_training_examples(pckmeans_model, embeddings)
                 examples = self.update_example_memory(new_examples)
 
                 # Restore original thresholds
