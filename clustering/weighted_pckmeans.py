@@ -556,7 +556,7 @@ if __name__ == '__main__':
         w_cl=args.w,
         max_iter=args.i,
         tol=1e-4,
-        early_stopping_tol=10,
+        early_stopping_tol=5,
         random_state=config['seed'],
         centroid_percentile=args.centroid_percentile,
         pairwise_percentile=args.pairwise_percentile

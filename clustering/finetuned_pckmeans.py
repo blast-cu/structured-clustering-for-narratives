@@ -812,7 +812,7 @@ class SBERTConstrainedClusteringTrainer:
                 'max_iter': 100,
                 'tol': 1e-4,
                 'early_stopping_tol': 5,
-                'random_state': 42
+                'random_state': config["seed"]
             }
 
         # Initialize embeddings and constraints
@@ -950,8 +950,9 @@ class SBERTConstrainedClusteringTrainer:
                 
                 # Get exact match purity (average of 25% and 100%)
                 purity_25 = purity_calculator.results['25']['exact_match_purity']['score']
-                purity_100 = purity_calculator.results['100']['exact_match_purity']['score']
-                current_purity = (purity_25 + purity_100) / 2.0 * 100  # Convert to percentage
+                # purity_100 = purity_calculator.results['100']['exact_match_purity']['score']
+                # current_purity = (purity_25 + purity_100) / 2.0 * 100  # Convert to percentage
+                current_purity = purity_25 * 100  # Use only 25% for simplicity
                 
                 print(f"Current exact match purity: {current_purity:.2f}%", flush=True)
             
