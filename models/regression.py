@@ -98,6 +98,11 @@ class RegressionModel:
         print(f"F1 Score: {f1_score}", flush=True)
         print(metrics.classification_report(y_test.to_numpy(), y_pred), flush=True)
 
+        # Print tab-separated row with all metrics
+        train_accuracy = round(mean(accuracy_scores) * 100, 2)
+        train_f1 = round(mean(f1_scores) * 100, 2)
+        print(f"{train_accuracy}\t{test_accuracy}\t{train_f1}\t{f1_score}", flush=True)
+
         return test_accuracy, f1_score
 
 
