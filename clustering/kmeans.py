@@ -80,7 +80,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    print("Running KMeans Clustering with configuration with the following parameters:" flush=True)
+    print("Running KMeans Clustering with configuration with the following parameters:", flush=True)
     print("N_CLUSTERS: " + str(args.k), flush=True)
 
     print("Loading data for clustering...", flush=True)
