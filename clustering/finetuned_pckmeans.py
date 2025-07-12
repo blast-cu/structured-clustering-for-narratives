@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
 from clustering.weighted_pckmeans import ConstrainedKMeans
+from clustering.metrics.purity import Purity
 from utils.constraint_flat_db import ConstraintFlatDB
 from utils.constraints_graph_db import ConstraintGraphDB
 
@@ -56,7 +57,9 @@ class SBERTConstrainedClusteringTrainer:
                  # PCKMeans parameters
                  n_clusters: int = 100,
                  w_cl: float = 0.5,
-                 seed: int = 42):
+                 seed: int = 42,
+                 # Best model selection criteria
+                 best_model_criteria: str = 'constraint_violations'):  # 'constraint_violations' or 'purity'
         """
         Initialize the EM-style training framework
 
@@ -117,6 +120,9 @@ class SBERTConstrainedClusteringTrainer:
         self.n_clusters = n_clusters
         self.w_cl = w_cl
 
+        # Best model selection criteria
+        self.best_model_criteria = best_model_criteria
+
         # Random seed
         self.seed = seed
 
@@ -152,7 +158,8 @@ class SBERTConstrainedClusteringTrainer:
             'constraint_violations': [],
             'inertia': [],
             'positive_examples': [],
-            'negative_examples': []
+            'negative_examples': [],
+            'purity_scores': []
         }
 
     @staticmethod
@@ -832,7 +839,8 @@ class SBERTConstrainedClusteringTrainer:
             'model': ConstrainedKMeans,
             'embs': ndarray,
             'inertia': float('inf'),
-            'constraint_violations': float('inf')
+            'constraint_violations': float('inf'),
+            'purity': 0.0
         }
 
         # Main EM loop
@@ -927,16 +935,47 @@ class SBERTConstrainedClusteringTrainer:
             print(f"Inertia: {final_metrics.inertia:.2f}, "
                   f"Constraint violations: {final_metrics.constraint_violations}", flush=True)
             
+            # Calculate purity if using purity-based best model selection
+            current_purity = 0.0
+            if self.best_model_criteria == 'purity':
+                print("Calculating exact match purity score...", flush=True)
+                clustering_data = {
+                    "number_cluster": self.n_clusters,
+                    "labels": pckmeans_model.labels_,
+                    "embeddings": embeddings,
+                    "cluster_centers": pckmeans_model.cluster_centers_
+                }
+                purity_calculator = Purity(config["processed_chains_path"], clustering_data)
+                purity_calculator.compute_purity()
+                
+                # Get exact match purity (average of 25% and 100%)
+                purity_25 = purity_calculator.results['25']['exact_match_purity']['score']
+                purity_100 = purity_calculator.results['100']['exact_match_purity']['score']
+                current_purity = (purity_25 + purity_100) / 2.0 * 100  # Convert to percentage
+                
+                print(f"Current exact match purity: {current_purity:.2f}%", flush=True)
+            
 
-            # Check if best model
-            if final_metrics.constraint_violations < best_model['constraint_violations']:
+            # Check if best model based on configured criteria
+            is_best = False
+            if self.best_model_criteria == 'purity':
+                # Best model based on highest purity
+                if current_purity > best_model['purity']:
+                    is_best = True
+            else:
+                # Best model based on lowest constraint violations (original criteria)
+                if final_metrics.constraint_violations < best_model['constraint_violations']:
+                    is_best = True
+            
+            if is_best:
                 best_model['model'] = pckmeans_model
                 best_model['embs'] = embeddings
                 best_model['inertia'] = final_metrics.inertia
                 best_model['constraint_violations'] = final_metrics.constraint_violations
-                print("Found new best model!", flush=True)
+                best_model['purity'] = current_purity
+                print(f"Found new best model! ({self.best_model_criteria}: {current_purity:.2f}% purity, {final_metrics.constraint_violations} violations)", flush=True)
 
-            # if last iteration,break
+            # Check if last iteration
             if iteration == self.max_iterations - 1:
                 print("Reached maximum iterations. Stopping training.", flush=True)
                 break
@@ -1008,7 +1047,8 @@ class SBERTConstrainedClusteringTrainer:
                 'inertia': final_metrics.inertia,
                 'constraint_violations': final_metrics.constraint_violations,
                 'positive_examples': len(examples['positive_pairs']),
-                'negative_examples': len(examples['negative_pairs'])
+                'negative_examples': len(examples['negative_pairs']),
+                'purity': current_purity
             })
 
             # Update previous model
@@ -1016,6 +1056,19 @@ class SBERTConstrainedClusteringTrainer:
 
         # self.sorted_constraints.close()
         # self.constraint_graph.close()
+
+        # Compute and print final purity for the best model
+        print("\n=== Final Purity Results for Best Model ===", flush=True)
+        final_clustering_data = {
+            "number_cluster": self.n_clusters,
+            "labels": best_model['model'].labels_,
+            "embeddings": best_model['embs'],
+            "cluster_centers": best_model['model'].cluster_centers_
+        }
+        final_purity_calculator = Purity(config["processed_chains_path"], final_clustering_data)
+        final_purity_calculator.compute_purity()
+        final_purity_calculator.print_results()
+        print("==========================================\n", flush=True)
 
         return best_model
 
@@ -1050,6 +1103,8 @@ if __name__ == '__main__':
     parser.add_argument('--pairwise_percentile', metavar='PAIRWISE_PERCENTILE', default=None, type=float, help='percentile threshold for pairwise distances (e.g., 10 for bottom 10%)')
     parser.add_argument('--init_strategy', metavar='INIT_STRATEGY', default='from_scratch', type=str,
                         help='initialization strategy (e.g., "scikit_kmeans", "from_scratch", "hybrid", "warm_start")')
+    parser.add_argument('--best_model_criteria', metavar='BEST_MODEL_CRITERIA', default='constraint_violations', type=str,
+                        help='criteria for selecting best model: "constraint_violations" or "purity"')
 
 
     args = parser.parse_args()
@@ -1071,7 +1126,8 @@ if __name__ == '__main__':
                                                   sample_near_centroids=True,
                                                   progressive_init=False,
                                                   memory_decay_factor=1.0,
-                                                  save_dir=config["clusters_path"]+"/finetuned_pckmeans")
+                                                  save_dir=config["clusters_path"]+"/finetuned_pckmeans",
+                                                  best_model_criteria=args.best_model_criteria)
 
     best_model = framework.train(config,
                                  data["chain_sents"], 

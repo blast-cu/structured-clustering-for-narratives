@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from clustering.initializer.base_initializer import BaseInitializer
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
+from clustering.metrics.purity import Purity
 from utils.constraint_flat_db import ConstraintFlatDB
 from utils.constraints_graph_db import ConstraintGraphDB
 
@@ -388,6 +389,9 @@ class ConstrainedKMeans:
             metrics = self._compute_metrics(X, new_assignments)
             self.history_.append(metrics)
             
+            # Print constraint violations for this iteration
+            print(f"Iteration {iteration + 1}: Constraint violations = {metrics.constraint_violations}", flush=True)
+            
             # Update violation statistics only if needed
             if self.w_cl > 0:
                 self._update_violation_statistics(metrics.violated_constraints)
@@ -574,5 +578,18 @@ if __name__ == '__main__':
               sorted_constraints=sorted_constraints,
               constraint_graph=constraint_graph,
               skip_init=args.skip_init)
+
+    # Compute and print purity results after clustering is complete
+    print("\n=== Purity Results ===", flush=True)
+    clustering_data = {
+        "number_cluster": model.n_clusters,
+        "labels": model.labels_,
+        "embeddings": embeddings,
+        "cluster_centers": model.cluster_centers_
+    }
+    purity_calculator = Purity(config["processed_chains_path"], clustering_data)
+    purity_calculator.compute_purity()
+    purity_calculator.print_results()
+    print("======================\n", flush=True)
 
     model.save(config, embeddings, args.skip_init)
