@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Define the parameter arrays
-num_clusters_values=(50 100 150 200 250 300 350 400 450 500 600 700 800 900 1000)
-w_cl_values=(50 100 1000)
+num_clusters_values=(50 100 150 200 250 300 350 400 450 500)
+w_cl_values=(0.5)
 
 # Count total combinations for progress tracking
 total_combinations=$((${#num_clusters_values[@]} * ${#w_cl_values[@]}))

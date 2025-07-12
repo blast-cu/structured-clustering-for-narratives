@@ -1119,6 +1119,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
+    print("Running Finetuned PCKmeans Clustering with the following parameters:", flush=True)
+
     print("N_CLUSTERS: " + str(args.k), flush=True)
     print("W_CL: " + str(args.w), flush=True)
     print("CENTROID_PERCENTILE: " + str(args.centroid_percentile), flush=True)
