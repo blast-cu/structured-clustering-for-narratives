@@ -166,7 +166,7 @@ class DCC(nn.Module):
     def fit(self, anchor=None, positive=None, negative=None,
             cl_ind1=None, cl_ind2=None, cl_penalty=None, X=None, lr=0.001, batch_size=256,
             num_epochs=10, update_interval=1, tol=1e-3, use_kmeans=True,
-            clustering_loss_weight=1):
+            clustering_loss_weight=1, compute_purity_per_epoch=False, processed_chains_path=None):
 
         '''X: tensor data'''
         use_cuda = torch.cuda.is_available()
@@ -264,6 +264,20 @@ class DCC(nn.Module):
             if cl_penalty > 0:
                 print("CL loss:", float(cl_loss.cpu()), flush=True)
 
+            # Compute purity for current epoch if requested
+            if compute_purity_per_epoch and processed_chains_path is not None:
+                print(f"\n=== Epoch {epoch + 1} Purity Results ===", flush=True)
+                clustering_data = {
+                    "number_cluster": self.n_clusters,
+                    "labels": y_pred,
+                    "embeddings": X.cpu().numpy(),
+                    "cluster_centers": self.mu.data.cpu().numpy()
+                }
+                purity_calculator = Purity(processed_chains_path, clustering_data)
+                purity_calculator.compute_purity()
+                purity_calculator.print_results()
+                print("=" * 40 + "\n", flush=True)
+
         return y_pred
 
     def save(self, config, y_pred, weight_pairwise):
@@ -301,6 +315,8 @@ if __name__ == '__main__':
                         help='weight for cannot-link constraints')
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='input batch size for training (default: 256)')
+    parser.add_argument('--compute_purity_per_epoch', action='store_true',
+                        help='compute purity after every epoch during training')
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
@@ -332,7 +348,8 @@ if __name__ == '__main__':
     cl_ind1, cl_ind2 = DCC.get_constraint_pairs(sorted_constraints)
 
     y_pred = dcc.fit(cl_ind1=cl_ind1, cl_ind2=cl_ind2, X=X, cl_penalty=args.weight_pairwise, num_epochs=args.epochs,
-                     batch_size=args.batch_size)
+                     batch_size=args.batch_size, compute_purity_per_epoch=args.compute_purity_per_epoch,
+                     processed_chains_path=config["processed_chains_path"])
 
     # Compute and print purity results after clustering is complete
     print("\n=== Purity Results ===", flush=True)
