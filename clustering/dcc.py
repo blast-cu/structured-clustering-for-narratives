@@ -322,6 +322,7 @@ if __name__ == '__main__':
     X = sbert_model.encode(
         data["chain_sents"], batch_size=32, show_progress_bar=True, normalize_embeddings=True
     )
+    X = torch.from_numpy(X)
 
     dcc = DCC(config, input_dim=384, z_dim=100, n_clusters=args.k, encodeLayer=[192],
               decodeLayer=[192], activation="relu", dropout=0)
