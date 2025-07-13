@@ -9,10 +9,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 from pyhocon import ConfigFactory
+from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans
 from torch import optim
 from torch.nn import Parameter
 from tqdm import tqdm
+
+from utils.constraint_flat_db import ConstraintFlatDB
+from clustering.metrics.purity import Purity
+from models.regression import RegressionModel
 
 
 class MSELoss(nn.Module):
@@ -292,7 +297,7 @@ if __name__ == '__main__':
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('-k', metavar='N_CLUSTERS', default=5, type=int, help='number of clusters')
     parser.add_argument('--epochs', metavar='EPOCHS', default=100, type=int, help='maximum number of epochs')
-    parser.add_argument('--weight_pairwise', metavar='WEIGHT_PAIRWISE', default=0.1, type=float,
+    parser.add_argument('--weight_pairwise', metavar='WEIGHT_PAIRWISE', default=0.5, type=float,
                         help='weight for cannot-link constraints')
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='input batch size for training (default: 256)')
@@ -308,16 +313,44 @@ if __name__ == '__main__':
     print("Loading data for clustering...", flush=True)
 
     # Load data
-    with open(config["cluster_embs_path"], 'rb') as f:
+    with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
+
+    print("Generating embeddings for sentences...", flush=True)
+    # Initialize embeddings and constraints
+    sbert_model = SentenceTransformer(config["cluster_model"])
+    X = sbert_model.encode(
+        data["chain_sents"], batch_size=32, show_progress_bar=True, normalize_embeddings=True
+    )
 
     dcc = DCC(config, input_dim=384, z_dim=100, n_clusters=args.k, encodeLayer=[192],
               decodeLayer=[192], activation="relu", dropout=0)
 
-    X = torch.from_numpy(data['embs'])
-    cl_ind1, cl_ind2 = DCC.get_constraint_pairs(data['constraints'])
+    print("Load constraints...", flush=True)
+    sorted_constraints = ConstraintFlatDB(config["constraints_flat_path"]).get_all_tuples_as_list()
+    cl_ind1, cl_ind2 = DCC.get_constraint_pairs(sorted_constraints)
 
     y_pred = dcc.fit(cl_ind1=cl_ind1, cl_ind2=cl_ind2, X=X, cl_penalty=args.weight_pairwise, num_epochs=args.epochs,
                      batch_size=args.batch_size)
+
+    # Compute and print purity results after clustering is complete
+    print("\n=== Purity Results ===", flush=True)
+    clustering_data = {
+        "number_cluster": dcc.n_clusters,
+        "labels": y_pred,
+        "embeddings": X,
+        "cluster_centers": dcc.mu.data.cpu().numpy()
+    }
+    purity_calculator = Purity(config["processed_chains_path"], clustering_data)
+    purity_calculator.compute_purity()
+    purity_calculator.print_results()
+    print("======================\n", flush=True)
+
+    # Run regression model after purity computation
+    print("\n=== Regression Results ===", flush=True)
+    regression_model = RegressionModel(config)
+    data = regression_model.create_dataset(config, clustering_data)
+    test_accuracy, f1_score = regression_model.regression(config, data)
+    print("==========================\n", flush=True)
 
     dcc.save(config, y_pred, args.weight_pairwise)
