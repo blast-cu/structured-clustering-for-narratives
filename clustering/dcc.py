@@ -267,10 +267,12 @@ class DCC(nn.Module):
             # Compute purity for current epoch if requested
             if compute_purity_per_epoch and processed_chains_path is not None:
                 print(f"\n=== Epoch {epoch + 1} Purity Results ===", flush=True)
+                # Get latest encoded embeddings from current model state
+                current_embeddings = self.encode_batch(X)
                 clustering_data = {
                     "number_cluster": self.n_clusters,
                     "labels": y_pred,
-                    "embeddings": X.cpu().numpy(),
+                    "embeddings": current_embeddings.cpu().numpy(),
                     "cluster_centers": self.mu.data.cpu().numpy()
                 }
                 purity_calculator = Purity(processed_chains_path, clustering_data)
@@ -353,10 +355,12 @@ if __name__ == '__main__':
 
     # Compute and print purity results after clustering is complete
     print("\n=== Purity Results ===", flush=True)
+    # Get final trained embeddings
+    final_embeddings = dcc.encode_batch(X)
     clustering_data = {
         "number_cluster": dcc.n_clusters,
         "labels": y_pred,
-        "embeddings": X,
+        "embeddings": final_embeddings.cpu().numpy(),
         "cluster_centers": dcc.mu.data.cpu().numpy()
     }
     purity_calculator = Purity(config["processed_chains_path"], clustering_data)
