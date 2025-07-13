@@ -11,7 +11,7 @@ from numpy import ndarray
 from pyhocon import ConfigFactory
 from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
-from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss
+from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss, CoSENTLoss
 
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
 from clustering.weighted_pckmeans import ConstrainedKMeans
@@ -53,7 +53,7 @@ class SBERTConstrainedClusteringTrainer:
                  progressive_init: bool = True,
                  centroid_adjustment_percentage: float = 0.1,
                  # Loss function for SBERT finetuning
-                 loss_function: str = 'cosine_similarity',
+                 loss_function: str = 'cosent',
                  # PCKMeans parameters
                  n_clusters: int = 100,
                  w_cl: float = 0.5,
@@ -719,7 +719,7 @@ class SBERTConstrainedClusteringTrainer:
             train_data.append({
                 'text_1': sentences[i],
                 'text_2': sentences[j],
-                'label': 0.0
+                'label': -1.0
             })
 
         # Create the Dataset object
@@ -735,15 +735,21 @@ class SBERTConstrainedClusteringTrainer:
 
         # Define loss function based on configuration
         if self.loss_function == 'cosine_similarity':
-            loss = CosineSimilarityLoss
+            loss = CosineSimilarityLoss(self.sbert_model)
+            print("Using CosineSimilarityLoss for fine-tuning", flush=True)
         elif self.loss_function == 'triplet':
-            loss = TripletLoss
+            loss = TripletLoss(self.sbert_model)
+            print("Using TripletLoss for fine-tuning", flush=True)
         elif self.loss_function == 'multiple_negatives':
-            loss = MultipleNegativesRankingLoss
+            loss = MultipleNegativesRankingLoss(self.sbert_model)
+            print("Using MultipleNegativesRankingLoss for fine-tuning", flush=True)
+        elif self.loss_function == 'cosent':
+            loss = CoSENTLoss(self.sbert_model)
+            print("Using CoSENTLoss for fine-tuning", flush=True)
         else:
             # Default to cosine similarity loss
             print(f"Warning: Unknown loss function '{self.loss_function}'. Using CosineSimilarityLoss instead.", flush=True)
-            loss = CosineSimilarityLoss
+            loss = CosineSimilarityLoss(self.sbert_model)
 
         # Define training arguments
         output_dir = os.path.join(self.save_dir, "sbert_checkpoints")
@@ -815,9 +821,10 @@ class SBERTConstrainedClusteringTrainer:
                 'random_state': config["seed"]
             }
 
+        print("Generating embeddings for sentences...", flush=True)
         # Initialize embeddings and constraints
         embeddings = self.sbert_model.encode(
-            sentences, batch_size=32, show_progress_bar=True, normalize_embeddings=True
+            sentences, batch_size=32, show_progress_bar=False, normalize_embeddings=True
         )
 
         # Initialize metrics
@@ -1092,7 +1099,7 @@ class SBERTConstrainedClusteringTrainer:
             "violations": pckmeans_model.get_violation_statistics()
         }
 
-        with open(config["clusters_path"] + f"em_clusters_{self.n_clusters}_{self.w_cl}_{init_strategy}_"
+        with open(config["clusters_path"] + f"cosent_em_clusters_{self.n_clusters}_{self.w_cl}_{init_strategy}_"
                                             f"{self.centroid_distance_threshold}_{self.max_anchors}.pickle",
                   'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)

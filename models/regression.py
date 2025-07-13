@@ -77,7 +77,7 @@ class RegressionModel:
         # Create pipeline to avoid data leakage in cross-validation
         pipeline = Pipeline([
             ('scaler', StandardScaler()),
-            ('classifier', LogisticRegression(solver='lbfgs', penalty='l2', C=0.5))
+            ('classifier', LogisticRegression(solver='lbfgs', penalty='l2', C=0.5, max_iter=1000))
         ])
 
         # define the model evaluation procedure
