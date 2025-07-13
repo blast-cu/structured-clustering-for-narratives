@@ -12,6 +12,8 @@ from pyhocon import ConfigFactory
 from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
 from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss, CoSENTLoss
+from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
+from transformers import EarlyStoppingCallback
 
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
 from clustering.weighted_pckmeans import ConstrainedKMeans
@@ -723,15 +725,27 @@ class SBERTConstrainedClusteringTrainer:
             })
 
         # Create the Dataset object
-        train_dataset = Dataset.from_list(train_data)
+        full_dataset = Dataset.from_list(train_data)
 
-        # For evaluation, hold out 10% of data
-        # train_eval = train_dataset.train_test_split(test_size=0.1)
-        # train_dataset = train_eval['train']
-        # eval_dataset = train_eval['test']
+        # Create train/dev split for early stopping
+        train_eval_split = full_dataset.train_test_split(test_size=0.1, seed=42)
+        train_dataset = train_eval_split['train']
+        eval_dataset = train_eval_split['test']
 
         print(f"Train dataset: {len(train_dataset)} examples", flush=True)
-        # print(f"Eval dataset: {len(eval_dataset)} examples", flush=True)
+        print(f"Eval dataset: {len(eval_dataset)} examples", flush=True)
+
+        # Create EmbeddingSimilarityEvaluator for early stopping
+        eval_sentences1 = [item['text_1'] for item in eval_dataset]
+        eval_sentences2 = [item['text_2'] for item in eval_dataset]
+        eval_scores = [item['label'] for item in eval_dataset]
+        
+        evaluator = EmbeddingSimilarityEvaluator(
+            sentences1=eval_sentences1,
+            sentences2=eval_sentences2,
+            scores=eval_scores,
+            name="sts_dev"
+        )
 
         # Define loss function based on configuration
         if self.loss_function == 'cosine_similarity':
@@ -755,7 +769,7 @@ class SBERTConstrainedClusteringTrainer:
         output_dir = os.path.join(self.save_dir, "sbert_checkpoints")
         os.makedirs(output_dir, exist_ok=True)
 
-        # Configure training arguments
+        # Configure training arguments with early stopping
         training_args = SentenceTransformerTrainingArguments(
             output_dir=output_dir,
             num_train_epochs=self.epochs_per_iteration,
@@ -764,13 +778,22 @@ class SBERTConstrainedClusteringTrainer:
             warmup_steps=self.warmup_steps,
             weight_decay=0.01,
             logging_dir=os.path.join(output_dir, "logs"),
-            logging_steps=5000,
-            greater_is_better=False,
+            logging_steps=100,
+            eval_strategy="steps",
+            eval_steps=500,
+            save_strategy="steps",
+            save_steps=500,
+            save_total_limit=1,
+            load_best_model_at_end=True,
+            metric_for_best_model="sts_dev_spearman_cosine",
+            greater_is_better=True,
             learning_rate=self.learning_rate,
-            report_to=[],
-            save_strategy="no",
-            save_total_limit=0,           
-            load_best_model_at_end=False
+            report_to=[]
+        )
+
+        early_stopping_callback = EarlyStoppingCallback(
+            early_stopping_patience=10,  # Stop after 3 evaluations without improvement
+            early_stopping_threshold=0.001  # Minimum improvement required
         )
 
         # Create the trainer
@@ -778,7 +801,10 @@ class SBERTConstrainedClusteringTrainer:
             model=self.sbert_model,
             args=training_args,
             train_dataset=train_dataset,
+            # eval_dataset=eval_dataset,
+            evaluator=evaluator,
             loss=loss,
+            callbacks=[early_stopping_callback]
         )
 
         # Train the model
