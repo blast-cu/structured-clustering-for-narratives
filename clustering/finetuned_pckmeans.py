@@ -11,7 +11,7 @@ from numpy import ndarray
 from pyhocon import ConfigFactory
 from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer, SentenceTransformerTrainingArguments, SentenceTransformerTrainer
-from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss, CoSENTLoss
+from sentence_transformers.losses import CosineSimilarityLoss, TripletLoss, MultipleNegativesRankingLoss, CoSENTLoss, ContrastiveLoss
 from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
 from transformers import EarlyStoppingCallback
 
@@ -55,7 +55,7 @@ class SBERTConstrainedClusteringTrainer:
                  progressive_init: bool = True,
                  centroid_adjustment_percentage: float = 0.1,
                  # Loss function for SBERT finetuning
-                 loss_function: str = 'cosent',
+                 loss_function: str = 'contrastive',
                  # PCKMeans parameters
                  n_clusters: int = 100,
                  w_cl: float = 0.5,
@@ -721,7 +721,7 @@ class SBERTConstrainedClusteringTrainer:
             train_data.append({
                 'text_1': sentences[i],
                 'text_2': sentences[j],
-                'label': -1.0
+                'label': 0.0
             })
 
         # Create the Dataset object
@@ -760,6 +760,9 @@ class SBERTConstrainedClusteringTrainer:
         elif self.loss_function == 'cosent':
             loss = CoSENTLoss(self.sbert_model)
             print("Using CoSENTLoss for fine-tuning", flush=True)
+        elif self.loss_function == 'contrastive':
+            loss = ContrastiveLoss(self.sbert_model)
+            print("Using ContrastiveLoss for fine-tuning", flush=True)
         else:
             # Default to cosine similarity loss
             print(f"Warning: Unknown loss function '{self.loss_function}'. Using CosineSimilarityLoss instead.", flush=True)
@@ -1125,7 +1128,7 @@ class SBERTConstrainedClusteringTrainer:
             "violations": pckmeans_model.get_violation_statistics()
         }
 
-        with open(config["clusters_path"] + f"cosent_em_clusters_{self.n_clusters}_{self.w_cl}_{init_strategy}_"
+        with open(config["clusters_path"] + f"cosent_es_em_clusters_{self.n_clusters}_{self.w_cl}_{init_strategy}_"
                                             f"{self.centroid_distance_threshold}_{self.max_anchors}.pickle",
                   'wb') as f:
             pickle.dump(output, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -1166,11 +1169,11 @@ if __name__ == '__main__':
                                                   sample_near_centroids=True,
                                                   progressive_init=False,
                                                   memory_decay_factor=1.0,
-                                                  save_dir=config["clusters_path"]+"/finetuned_pckmeans",
+                                                  save_dir=config["clusters_path"]+"finetuned_pckmeans",
                                                   best_model_criteria=args.best_model_criteria)
 
     best_model = framework.train(config,
                                  data["chain_sents"], 
                                  initialization_strategy=args.init_strategy)
 
-    framework.save(config, best_model['model'], best_model['embs'], args.init_strategy)
+    # framework.save(config, best_model['model'], best_model['embs'], args.init_strategy)
