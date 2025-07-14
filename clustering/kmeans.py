@@ -30,7 +30,10 @@ class KMeansClustering:
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.sbert_model = SentenceTransformer(self.config["cluster_model"])
+        if self.config["cluster_model"].startswith("nomic"):
+            self.sbert_model = SentenceTransformer(self.config["cluster_model"], trust_remote_code=True)
+        else:
+            self.sbert_model = SentenceTransformer(self.config["cluster_model"])
         self.sbert_model.to(self.device)
 
     def kmeans(self, X):
@@ -89,6 +92,10 @@ if __name__ == "__main__":
     with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
     chain_sents = data['chain_sents']
+
+    if config["cluster_model"].startswith("nomic"):
+        # preprend each sentence with "clustering: "
+        chain_sents = ["clustering: " + sent for sent in chain_sents]
 
     model = KMeansClustering(args.k, config)
     embeddings = model.compute_embeddings(chain_sents)
