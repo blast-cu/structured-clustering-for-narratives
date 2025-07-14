@@ -219,6 +219,29 @@ class DCC(nn.Module):
 
                     break
 
+                # Compute purity for current epoch if requested
+            if compute_purity_per_epoch and processed_chains_path is not None:
+                print(f"\n=== Epoch {epoch + 1} Purity Results ===", flush=True)
+                # Ensure model is in eval mode for embedding computation
+                self.eval()
+                with torch.no_grad():
+                    # Get latest encoded embeddings from current model state
+                    print(f"Debug: current_embeddings shape: {latent.shape}", flush=True)
+                    print(f"Debug: cluster_centers shape: {self.mu.data.cpu().numpy().shape}", flush=True)
+                    print(f"Debug: y_pred shape: {y_pred.shape}", flush=True)
+                    clustering_data = {
+                        "number_cluster": self.n_clusters,
+                        "labels": y_pred,
+                        "embeddings": latent.cpu().numpy(),
+                        "cluster_centers": self.mu.data.cpu().numpy()
+                    }
+                    purity_calculator = Purity(processed_chains_path, clustering_data)
+                    purity_calculator.compute_purity()
+                    purity_calculator.print_results()
+                # Return to train mode
+                self.train()
+                print("=" * 40 + "\n", flush=True)
+
             # train 1 epoch for clustering and reconstruction loss
             train_loss = 0.0
             recon_loss_val = 0.0
@@ -263,30 +286,6 @@ class DCC(nn.Module):
 
             if cl_penalty > 0:
                 print("CL loss:", float(cl_loss.cpu()), flush=True)
-
-            # Compute purity for current epoch if requested
-            if compute_purity_per_epoch and processed_chains_path is not None:
-                print(f"\n=== Epoch {epoch + 1} Purity Results ===", flush=True)
-                # Ensure model is in eval mode for embedding computation
-                self.eval()
-                with torch.no_grad():
-                    # Get latest encoded embeddings from current model state
-                    current_embeddings = self.encode_batch(X)
-                    print(f"Debug: current_embeddings shape: {current_embeddings.shape}", flush=True)
-                    print(f"Debug: cluster_centers shape: {self.mu.data.cpu().numpy().shape}", flush=True)
-                    print(f"Debug: y_pred shape: {y_pred.shape}", flush=True)
-                    clustering_data = {
-                        "number_cluster": self.n_clusters,
-                        "labels": y_pred,
-                        "embeddings": current_embeddings.cpu().numpy(),
-                        "cluster_centers": self.mu.data.cpu().numpy()
-                    }
-                    purity_calculator = Purity(processed_chains_path, clustering_data)
-                    purity_calculator.compute_purity()
-                    purity_calculator.print_results()
-                # Return to train mode
-                self.train()
-                print("=" * 40 + "\n", flush=True)
 
         return y_pred
 
