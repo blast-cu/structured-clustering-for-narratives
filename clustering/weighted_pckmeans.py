@@ -538,14 +538,8 @@ if __name__ == '__main__':
     with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
     chain_sents = data['chain_sents']
-    if config["cluster_model"].startswith("nomic"):
-        # preprend each sentence with "clustering: "
-        chain_sents = ["clustering: " + sent for sent in chain_sents]
 
-    if config["cluster_model"].startswith("nomic"):
-        sbert_model = SentenceTransformer(config["cluster_model"], trust_remote_code=True)
-    else:
-        sbert_model = SentenceTransformer(config["cluster_model"])
+    sbert_model = SentenceTransformer(config["cluster_model"])
 
     embeddings = sbert_model.encode(
         chain_sents, batch_size=32, show_progress_bar=True, normalize_embeddings=True
@@ -604,7 +598,7 @@ if __name__ == '__main__':
     print("\n=== Regression Results ===", flush=True)
     regression_model = RegressionModel(config)
     data = regression_model.create_dataset(config, clustering_data)
-    test_accuracy, f1_score = regression_model.regression(config, data)
+    test_accuracy, f1_score = regression_model.run_regression(config, data)
     print("==========================\n", flush=True)
 
     model.save(config, embeddings, args.skip_init)

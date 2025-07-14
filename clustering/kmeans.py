@@ -30,10 +30,7 @@ class KMeansClustering:
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        if self.config["cluster_model"].startswith("nomic"):
-            self.sbert_model = SentenceTransformer(self.config["cluster_model"], trust_remote_code=True)
-        else:
-            self.sbert_model = SentenceTransformer(self.config["cluster_model"])
+        self.sbert_model = SentenceTransformer(self.config["cluster_model"])
         self.sbert_model.to(self.device)
 
     def kmeans(self, X):
@@ -61,8 +58,7 @@ class KMeansClustering:
         # Run regression model after purity computation
         print("\n=== Regression Results ===", flush=True)
         regression_model = RegressionModel(self.config)
-        data = regression_model.create_dataset(self.config, clustering_data)
-        test_accuracy, f1_score = regression_model.regression(self.config, data)
+        regression_model.run_regression(self.config, clustering_data)
         print("==========================\n", flush=True)
 
         # Save clustering results
@@ -92,10 +88,6 @@ if __name__ == "__main__":
     with open(config["processed_chains_path"], 'rb') as f:
         data = pickle.load(f)
     chain_sents = data['chain_sents']
-
-    if config["cluster_model"].startswith("nomic"):
-        # preprend each sentence with "clustering: "
-        chain_sents = ["clustering: " + sent for sent in chain_sents]
 
     model = KMeansClustering(args.k, config)
     embeddings = model.compute_embeddings(chain_sents)
