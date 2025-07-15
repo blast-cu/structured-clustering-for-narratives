@@ -597,8 +597,7 @@ if __name__ == '__main__':
     # Run regression model after purity computation
     print("\n=== Regression Results ===", flush=True)
     regression_model = RegressionModel(config)
-    data = regression_model.create_dataset(config, clustering_data)
-    test_accuracy, f1_score = regression_model.run_regression(config, data)
+    regression_model.run_regression(config, clustering_data)
     print("==========================\n", flush=True)
 
     model.save(config, embeddings, args.skip_init)
