@@ -459,10 +459,10 @@ def main():
         config = ConfigFactory.parse_file('./config.conf')[args.config]
         
         # Load clustering results
-        with open("./data/mfc/immigration/clustering/clusters_350_0.0.pickle", 'rb') as f:
+        with open("./data/mfc/immigration/clustering/clusters_100_0.0.pickle", 'rb') as f:
             clustering_data_1 = pickle.load(f)
         
-        with open("./data/mfc/immigration/clustering/clusters_350_0.5.pickle", 'rb') as f:
+        with open("./data/mfc/immigration/clustering/clusters_100_0.5.pickle", 'rb') as f:
             clustering_data_2 = pickle.load(f)
         
         # Generate intrusion data
