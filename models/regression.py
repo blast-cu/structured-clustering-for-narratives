@@ -64,7 +64,7 @@ class RegressionModel:
         print(f"Filtered from {len(labels)} to {len(chains_to_keep)} chains ({len(chains_to_keep)/len(labels)*100:.1f}%)", flush=True)
         return chains_to_keep
 
-    def create_dataset(self, config, clustering_data, use_centroid_filtering=False, centroid_top_k_percent=50.0):
+    def create_dataset(self, config, clustering_data, use_centroid_filtering=False, centroid_top_k_percent=50.0, filter_labels=False):
         print("Creating dataset...", flush=True)
 
         with open(self.config["relations_path"], 'rb') as f:
@@ -90,6 +90,11 @@ class RegressionModel:
             doc_key = processed_chains['processed_chains'][chain_idx]['doc_id']
             if doc_key not in dataset:
                 doc = corpus[doc_key]
+                if filter_labels and doc['primary_frame'] in ["Capacity and Resources primary",
+                                                              "Fairness and Equality primary",
+                                                              "Morality primary",
+                                                              "Quality of Life primary"]:
+                    continue
                 dataset[doc_key] = {
                     "primary_frame": doc['primary_frame'],
                     "event_chain_clusters": {}
@@ -131,10 +136,23 @@ class RegressionModel:
         X = data.iloc[:, :-1]
         y = data.iloc[:, -1]
 
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=config['seed'])
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=config[
+            'seed'])
         
         print(f"Train set size: {len(X_train)}", flush=True)
         print(f"Test set size: {len(X_test)}", flush=True)
+        
+        # Print label counts for training set
+        train_counts = pd.Series(y_train).value_counts().sort_index()
+        print("Training set label counts:", flush=True)
+        for label, count in train_counts.items():
+            print(f"  Label {label}: {count}", flush=True)
+        
+        # Print label counts for test set
+        test_counts = pd.Series(y_test).value_counts().sort_index()
+        print("Test set label counts:", flush=True)
+        for label, count in test_counts.items():
+            print(f"  Label {label}: {count}", flush=True)
 
         # Create pipeline to avoid data leakage in cross-validation
         pipeline = Pipeline([
@@ -154,11 +172,11 @@ class RegressionModel:
         pipeline.fit(X_train, y_train)
         y_pred = pipeline.predict(X_test)
         test_accuracy = round(metrics.accuracy_score(y_test.to_numpy(), y_pred) * 100, 2)
-        f1_score = round(metrics.f1_score(y_test.to_numpy(), y_pred, average='macro') * 100, 2)
+        f1_score = round(metrics.f1_score(y_test.to_numpy(), y_pred, average='macro', zero_division=0) * 100, 2)
 
         print(f"Test Accuracy: {test_accuracy}", flush=True)
         print(f"F1 Score: {f1_score}", flush=True)
-        print(metrics.classification_report(y_test.to_numpy(), y_pred), flush=True)
+        print(metrics.classification_report(y_test.to_numpy(), y_pred, zero_division=0), flush=True)
 
         # Print tab-separated row with all metrics
         train_accuracy = round(mean(accuracy_scores) * 100, 2)
@@ -167,7 +185,7 @@ class RegressionModel:
             
         return test_accuracy, f1_score, train_accuracy, train_f1
 
-    def run_regression(self, config, clustering_data):
+    def run_regression(self, config, clustering_data, filter_labels=False):
         """
         Run regression twice: once on top 25% closest to centroids, then on all chains.
         Prints results in tab-separated format: Train Acc, Test Acc, Train F1, Test F1.
@@ -175,14 +193,15 @@ class RegressionModel:
         # Run 1: Top 25% closest to centroids
         data_filtered = self.create_dataset(config, clustering_data, 
                                           use_centroid_filtering=True, 
-                                          centroid_top_k_percent=25.0)
+                                          centroid_top_k_percent=25.0,
+                                          filter_labels=filter_labels)
         test_acc_filtered, f1_filtered, train_acc_filtered, train_f1_filtered = self.regression(config, data_filtered, 
                                                         use_centroid_filtering=True, 
                                                         centroid_top_k_percent=25.0)
         
         # Run 2: All chains
         data_all = self.create_dataset(config, clustering_data, 
-                                     use_centroid_filtering=False)
+                                     use_centroid_filtering=False, filter_labels=filter_labels)
         test_acc_all, f1_all, train_acc_all, train_f1_all = self.regression(config, data_all, 
                                              use_centroid_filtering=False)
         
@@ -198,8 +217,9 @@ if __name__ == "__main__":
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('--use-centroid-filtering', action='store_true', 
                         help='Filter chains to only use those closest to cluster centroids')
-    parser.add_argument('--centroid-top-k-percent', type=float, default=50.0,
+    parser.add_argument('--centroid-top-k-percent', type=float, default=100.0,
                         help='Percentage of chains closest to centroids to keep (default: 50.0)')
+    parser.add_argument('--filter-labels', action='store_true', default=False)
     args = parser.parse_args()
 
     config = ConfigFactory.parse_file('./config.conf')[args.c]
@@ -208,10 +228,12 @@ if __name__ == "__main__":
 
     model = RegressionModel(config)
 
-    with open("./data/mfc/immigration/clustering/clusters_350_0.5.pickle", 'rb') as f:
+    with open("./data/mfc/guncontrol/clustering/clusters_100_0.0.pickle", 'rb') as f:
         clustering_data = pickle.load(f)
 
-    data = model.create_dataset(config, clustering_data, 
-                                args.use_centroid_filtering, args.centroid_top_k_percent)
-    model.regression(config, data, 
-                     args.use_centroid_filtering, args.centroid_top_k_percent)
+    # data = model.create_dataset(config, clustering_data,
+    #                             args.use_centroid_filtering, args.centroid_top_k_percent, args.filter_labels)
+    # model.regression(config, data,
+    #                  args.use_centroid_filtering, args.centroid_top_k_percent)
+
+    model.run_regression(config, clustering_data, filter_labels=True)
