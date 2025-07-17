@@ -228,7 +228,7 @@ if __name__ == "__main__":
 
     model = RegressionModel(config)
 
-    with open("./data/mfc/guncontrol/clustering/clusters_100_0.0.pickle", 'rb') as f:
+    with open("./data/mfc/guncontrol/clustering/constrained_custom/clusters_500_0.5_.pickle", 'rb') as f:
         clustering_data = pickle.load(f)
 
     # data = model.create_dataset(config, clustering_data,

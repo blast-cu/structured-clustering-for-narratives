@@ -557,10 +557,10 @@ def main():
         config = ConfigFactory.parse_file('./config.conf')[args.config]
         
         # Load clustering results
-        with open("./data/mfc/immigration/clustering/clusters_100_0.0.pickle", 'rb') as f:
+        with open("./data/mfc/guncontrol/clustering/clusters_300_0.0.pickle", 'rb') as f:
             clustering_data_1 = pickle.load(f)
         
-        with open("./data/mfc/immigration/clustering/clusters_100_0.5.pickle", 'rb') as f:
+        with open("./data/mfc/guncontrol/clustering/constrained_custom/clusters_300_0.5_.pickle", 'rb') as f:
             clustering_data_2 = pickle.load(f)
         
         # Determine counts based on user input (exact counts take precedence)

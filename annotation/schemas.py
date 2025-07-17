@@ -55,3 +55,6 @@ class ImmigrationEventChainAnnotation(BaseModel):
 
 class EventChainSentence(BaseModel):
     sentence: str = Field(..., description="The sentence expanding the event chain")
+
+class ClusterTheme(BaseModel):
+    theme: str = Field(..., description="Concise sentence summarizing the central narrative theme")

@@ -164,7 +164,7 @@ class CharacterAnalyzer:
                                                                      think=True,
                                                                      num_ctx=self.num_ctx)
                 if domain == 'Gun Control':
-                    structured_response = self.reasoning_model.chat(self.structured_output_system_prompt,
+                    structured_response = self.output_model.chat(self.structured_output_system_prompt,
                                                                  reasoning_model_response,
                                                                  think=False,
                                                                  repeat_penalty=True,

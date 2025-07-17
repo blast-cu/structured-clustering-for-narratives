@@ -6,7 +6,6 @@ import sys
 import os
 
 from collections import Counter
-from typing import List, Tuple
 
 from pyhocon import ConfigFactory
 from tqdm import tqdm
