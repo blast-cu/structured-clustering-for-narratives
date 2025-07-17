@@ -52,8 +52,6 @@ class ClusterAnalyzer:
                       encoding='utf-8') as file:
                 self.char_roles = file.read()
 
-        self.result_set = []
-
 
     @staticmethod
     def filter_chains_by_centroid_proximity(clustering_data, top_k_percent=25.0):
@@ -116,7 +114,7 @@ class ClusterAnalyzer:
             clusters[label].append(chain_entry)
         return clusters
 
-    def process_documents(self, clusters, num_workers, save_interval, sequential=False):
+    def process_clusters(self, clusters, num_workers, save_interval, sequential=False):
         processed_clusters = self.load_existing_progress()
         if len(processed_clusters) > 0:
             analyzed_clusters = processed_clusters
@@ -140,7 +138,7 @@ class ClusterAnalyzer:
                         # Skip already processed documents - don't update progress bar
                         continue
                     try:
-                        processed_cluster = self.process_document(cluster)
+                        processed_cluster = self.process_cluster(cluster)
                         analyzed_clusters[cluster_idx] = processed_cluster
                         processed_count += 1
 
@@ -165,7 +163,7 @@ class ClusterAnalyzer:
                 return
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
-                futures = {executor.submit(self.process_document, cluster): cluster_idx for cluster_idx, cluster in
+                futures = {executor.submit(self.process_cluster, cluster): cluster_idx for cluster_idx, cluster in
                            unprocessed_items.items()}
                 # Initialize tqdm progress bar to track document processing
                 with tqdm(total=len(unprocessed_items), desc="Processing documents") as pbar:
@@ -248,9 +246,9 @@ class ClusterAnalyzer:
                 retry_count += 1
         return None
 
-    def save_progress(self, annotated_docs):
+    def save_progress(self, analyzed_clusters):
         with open(self.config["cluster_analysis_path"], 'wb') as f:
-            pickle.dump(annotated_docs, f)
+            pickle.dump(analyzed_clusters, f)
 
     def load_existing_progress(self):
         """Load existing processed documents if save file exists, creating a backup first"""
@@ -325,6 +323,9 @@ if __name__ == '__main__':
     parser.add_argument('--domain', metavar='DOMAIN')
     parser.add_argument('--chains_per_cluster', type=int, default=25, metavar='CHAINS_PER_CLUSTER')
     parser.add_argument('--workers', type=int, default=4, metavar='WORKERS', help='Number of worker threads')
+    parser.add_argument('--save_interval', type=int, default=10, metavar='SAVE_INTERVAL',
+                        help='Number of documents to process before saving progress')
+    parser.add_argument('--sequential', action='store_true', help='Run in sequential mode instead of parallel')
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
@@ -337,3 +338,4 @@ if __name__ == '__main__':
 
     analyzer = ClusterAnalyzer(config, args.host, args.port, args.domain, args.chains_per_cluster)
     dataset_for_analysis = analyzer.create_dataset(clustering_data, processed_chains)
+    analyzer.process_clusters(dataset_for_analysis, args.workers, args.save_interval, args.sequential)

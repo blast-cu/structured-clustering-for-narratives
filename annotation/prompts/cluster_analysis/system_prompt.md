@@ -9,9 +9,10 @@ and stance towards the topic area (e.g., Gun Control, Immigration) to identify t
 1. Analyze the provided sentences to identify the central narrative theme 
 2. Consider how the character roles interact within this narrative framework 
 3. Generate ONE concise sentence (15-25 words) that captures the overarching story, message, or relationship pattern 
-4. Focus on the relationship dynamics, conflict, causation, or resolution patterns present in the cluster 
-5. Ensure your narrative summary reflects the specific domain context provided 
-6. Output your response as valid JSON in the specified format
+4. Include specific events, actions, or circumstances that recur across the sentences to ground your summary in concrete details
+5. Focus on the relationship dynamics, conflict, causation, or resolution patterns present in the cluster 
+6. Ensure your narrative summary reflects the specific domain context provided 
+7. Output your response as valid JSON in the specified format
 
 ## Input Format
 
