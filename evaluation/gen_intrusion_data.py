@@ -7,6 +7,7 @@ from typing import Dict, List, Tuple, Any
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances
 from pyhocon import ConfigFactory
+from tqdm import tqdm
 
 
 class IntrusionDataGenerator:
@@ -49,7 +50,7 @@ class IntrusionDataGenerator:
         print(" Index mapping verified successfully")
     
     def _compute_cluster_statistics(self, clustering_data: Dict) -> Dict:
-        """Compute statistics for each cluster to determine difficulty levels."""
+        """Compute basic statistics for each cluster."""
         embeddings = clustering_data['embeddings']
         labels = clustering_data['labels']
         centroids = clustering_data['cluster_centers']
@@ -67,57 +68,27 @@ class IntrusionDataGenerator:
             # Calculate distances from points to centroid
             distances_to_centroid = euclidean_distances(cluster_embeddings, centroid.reshape(1, -1)).flatten()
             
-            # Calculate inter-cluster distances
-            other_centroids = np.delete(centroids, cluster_id, axis=0)
-            min_centroid_distance = np.min(euclidean_distances(centroid.reshape(1, -1), other_centroids))
-            
             cluster_stats[cluster_id] = {
                 'indices': cluster_indices,
                 'size': len(cluster_indices),
-                'cohesion': np.std(distances_to_centroid),  # Lower is more cohesive
-                'min_centroid_distance': min_centroid_distance,  # Higher means more separated
                 'distances_to_centroid': distances_to_centroid
             }
         
         return cluster_stats
     
-    def _categorize_difficulty(self, cluster_stats: Dict) -> Dict[str, List[int]]:
-        """Categorize clusters by difficulty level."""
-        # Extract metrics for percentile calculation
-        cohesions = [stats['cohesion'] for stats in cluster_stats.values()]
-        centroid_distances = [stats['min_centroid_distance'] for stats in cluster_stats.values()]
-        
-        cohesion_33 = np.percentile(cohesions, 33)
-        cohesion_67 = np.percentile(cohesions, 67)
-        centroid_33 = np.percentile(centroid_distances, 33)
-        centroid_67 = np.percentile(centroid_distances, 67)
-        
-        difficulty_clusters = {'easy': [], 'medium': [], 'hard': []}
-        
-        for cluster_id, stats in cluster_stats.items():
-            cohesion = stats['cohesion']
-            centroid_dist = stats['min_centroid_distance']
-            
-            # Easy: high separation, low cohesion (tight clusters far apart)
-            if centroid_dist >= centroid_67 and cohesion <= cohesion_33:
-                difficulty_clusters['easy'].append(cluster_id)
-            # Hard: low separation, high cohesion (loose clusters close together)
-            elif centroid_dist <= centroid_33 and cohesion >= cohesion_67:
-                difficulty_clusters['hard'].append(cluster_id)
-            else:
-                difficulty_clusters['medium'].append(cluster_id)
-        
-        return difficulty_clusters
     
-    def _sample_positive_examples(self, cluster_stats: Dict, cluster_id: int) -> Tuple[int, int]:
+    def _sample_positive_examples(self, cluster_stats: Dict, cluster_id: int) -> Tuple[int, int, bool]:
         """Sample two positive examples from a cluster."""
         cluster_indices = cluster_stats[cluster_id]['indices']
         distances = cluster_stats[cluster_id]['distances_to_centroid']
         
-        # Sort by distance to centroid and take top 25%
+        # Sort by distance to centroid and take top k%
         sorted_indices = cluster_indices[np.argsort(distances)]
-        top_25_percent = max(1, int(len(sorted_indices) * 0.25))
-        candidate_indices = sorted_indices[:top_25_percent]
+        top_k_percent = max(1, int(len(sorted_indices) * 0.5))
+        candidate_indices = sorted_indices[:top_k_percent]
+        
+        # Track whether document diversity was satisfied
+        doc_diversity_satisfied = True
         
         # Sample two points ensuring they don't have the same doc_id
         max_attempts = 50
@@ -126,6 +97,10 @@ class IntrusionDataGenerator:
                 # Fall back to closest two if not enough candidates
                 positive_1_idx = sorted_indices[0]
                 positive_2_idx = sorted_indices[min(1, len(sorted_indices) - 1)]
+                # Check if these have different doc_ids
+                doc_id_1 = self.processed_chains[positive_1_idx]['doc_id']
+                doc_id_2 = self.processed_chains[positive_2_idx]['doc_id']
+                doc_diversity_satisfied = (doc_id_1 != doc_id_2)
                 break
                 
             # Sample two different indices
@@ -139,7 +114,8 @@ class IntrusionDataGenerator:
             if doc_id_1 != doc_id_2:
                 break
         else:
-            # If we couldn't find different doc_ids in top 25%, expand search
+            # If we couldn't find different doc_ids in top 50%, expand search
+            found_diverse_pair = False
             for i in range(len(sorted_indices) - 1):
                 for j in range(i + 1, len(sorted_indices)):
                     idx1, idx2 = sorted_indices[i], sorted_indices[j]
@@ -147,60 +123,186 @@ class IntrusionDataGenerator:
                     doc_id_2 = self.processed_chains[idx2]['doc_id']
                     if doc_id_1 != doc_id_2:
                         positive_1_idx, positive_2_idx = idx1, idx2
+                        found_diverse_pair = True
                         break
                 else:
                     continue
                 break
-            else:
+            
+            if not found_diverse_pair:
                 # Last resort: take the two closest regardless of doc_id
                 positive_1_idx = sorted_indices[0]
                 positive_2_idx = sorted_indices[min(1, len(sorted_indices) - 1)]
+                doc_diversity_satisfied = False
         
-        return positive_1_idx, positive_2_idx
+        return positive_1_idx, positive_2_idx, doc_diversity_satisfied
     
-    def _sample_intruder(self, clustering_data: Dict, source_cluster_id: int, 
-                        difficulty: str, cluster_stats: Dict) -> int:
-        """Sample an intruder from a different cluster."""
+    def _sample_intruder_easy(self, clustering_data: Dict, source_cluster_id: int, 
+                             cluster_stats: Dict) -> int:
+        """Sample an easy intruder from top 25% clusters, top 25% points."""
         centroids = clustering_data['cluster_centers']
         source_centroid = centroids[source_cluster_id]
         
         # Find candidate clusters (excluding source)
         candidate_clusters = [cid for cid in cluster_stats.keys() if cid != source_cluster_id]
         
-        if difficulty == 'easy':
-            # Choose from distant clusters
-            distances = euclidean_distances(source_centroid.reshape(1, -1), centroids[candidate_clusters]).flatten()
-            # Take clusters from top 50% of distances
-            distant_threshold = np.percentile(distances, 50)
-            distant_clusters = [candidate_clusters[i] for i, d in enumerate(distances) if d >= distant_threshold]
-            target_cluster = random.choice(distant_clusters) if distant_clusters else random.choice(candidate_clusters)
+        # Get distances to all candidate clusters and select top 25% closest
+        distances = euclidean_distances(source_centroid.reshape(1, -1), centroids[candidate_clusters]).flatten()
+        top_25_percent = max(1, int(len(candidate_clusters) * 0.25))
+        closest_cluster_indices = np.argsort(distances)[:top_25_percent]
+        close_clusters = [candidate_clusters[i] for i in closest_cluster_indices]
         
-        elif difficulty == 'hard':
-            # Choose from nearby clusters
-            distances = euclidean_distances(source_centroid.reshape(1, -1), centroids[candidate_clusters]).flatten()
-            # Take clusters from bottom 50% of distances
-            close_threshold = np.percentile(distances, 50)
-            close_clusters = [candidate_clusters[i] for i, d in enumerate(distances) if d <= close_threshold]
-            target_cluster = random.choice(close_clusters) if close_clusters else random.choice(candidate_clusters)
+        # Randomly select from the top 25% closest clusters
+        target_cluster = random.choice(close_clusters)
         
-        else:  # medium
-            target_cluster = random.choice(candidate_clusters)
-        
-        # Sample a representative point from target cluster
+        # Get top 25% points closest to target cluster's centroid
         target_indices = cluster_stats[target_cluster]['indices']
         target_distances = cluster_stats[target_cluster]['distances_to_centroid']
         
-        # Sample from points reasonably close to target centroid (top 70%)
-        close_indices = target_indices[target_distances <= np.percentile(target_distances, 70)]
-        intruder_idx = random.choice(close_indices)
+        # Select top 25% closest points to centroid
+        top_25_percent_points = max(1, int(len(target_indices) * 0.25))
+        closest_point_indices = np.argsort(target_distances)[:top_25_percent_points]
+        close_points = target_indices[closest_point_indices]
+        
+        # Randomly select from top 25% closest points
+        intruder_idx = random.choice(close_points)
         
         return intruder_idx
     
+    def _sample_intruder_medium(self, clustering_data: Dict, source_cluster_id: int, 
+                               cluster_stats: Dict) -> int:
+        """Sample a medium intruder from boundary points almost assigned to source cluster - vectorized."""
+        centroids = clustering_data['cluster_centers']
+        source_centroid = centroids[source_cluster_id]
+        embeddings = clustering_data['embeddings']
+        
+        # Find candidate clusters (excluding source)
+        candidate_clusters = [cid for cid in cluster_stats.keys() if cid != source_cluster_id]
+        
+        if not candidate_clusters:
+            # Fallback to random cluster selection if no candidates
+            all_clusters = list(cluster_stats.keys())
+            if source_cluster_id in all_clusters:
+                all_clusters.remove(source_cluster_id)
+            if not all_clusters:
+                # Emergency fallback - use any point from source cluster
+                return cluster_stats[source_cluster_id]['indices'][0]
+            random_cluster = random.choice(all_clusters)
+            random_indices = cluster_stats[random_cluster]['indices']
+            return int(random.choice(random_indices))
+        
+        # Collect all candidate points and their cluster info
+        all_candidate_indices = []
+        cluster_assignments = []
+        
+        for cluster_id in candidate_clusters:
+            cluster_indices = cluster_stats[cluster_id]['indices']
+            all_candidate_indices.extend(cluster_indices)
+            cluster_assignments.extend([cluster_id] * len(cluster_indices))
+        
+        if not all_candidate_indices:
+            # Fallback to random cluster selection
+            all_clusters = list(cluster_stats.keys())
+            if source_cluster_id in all_clusters:
+                all_clusters.remove(source_cluster_id)
+            if not all_clusters:
+                return cluster_stats[source_cluster_id]['indices'][0]  # Emergency fallback
+            random_cluster = random.choice(all_clusters)
+            random_indices = cluster_stats[random_cluster]['indices']
+            return random.choice(random_indices)
+        
+        # Convert to numpy arrays for vectorized operations
+        candidate_indices = np.array(all_candidate_indices)
+        cluster_assignments = np.array(cluster_assignments)
+        
+        # Get embeddings for all candidate points
+        candidate_embeddings = embeddings[candidate_indices]
+        
+        # Vectorized distance calculations
+        # Distance from all points to source centroid
+        dist_to_source = euclidean_distances(candidate_embeddings, source_centroid.reshape(1, -1)).flatten()
+        
+        # Distance from each point to its own cluster centroid
+        # Group by cluster for efficient computation
+        dist_to_own = np.zeros(len(candidate_indices))
+        for cluster_id in candidate_clusters:
+            mask = cluster_assignments == cluster_id
+            if np.any(mask):
+                cluster_centroid = centroids[cluster_id]
+                masked_embeddings = candidate_embeddings[mask]
+                cluster_distances = euclidean_distances(masked_embeddings, cluster_centroid.reshape(1, -1)).flatten()
+                dist_to_own[mask] = cluster_distances
+        
+        # Calculate the difference - smaller positive values mean "almost assigned"
+        distance_diff = dist_to_source - dist_to_own
+        
+        # Find boundary candidates: points within 50% difference
+        boundary_mask = distance_diff <= (dist_to_own * 0.5)
+        
+        if not np.any(boundary_mask):
+            # Fallback: find the point closest to source centroid
+            closest_idx = np.argmin(dist_to_source)
+            return int(candidate_indices[closest_idx])
+        
+        # Filter to boundary candidates
+        boundary_indices = candidate_indices[boundary_mask]
+        boundary_diff = distance_diff[boundary_mask]
+        boundary_dist_to_source = dist_to_source[boundary_mask]
+        
+        # Sort by distance difference (smallest first) and then by distance to source
+        sort_keys = np.lexsort((boundary_dist_to_source, boundary_diff))
+        sorted_boundary_indices = boundary_indices[sort_keys]
+        
+        # Select from top 25% of boundary candidates or at least 1
+        top_candidates_count = max(1, int(len(sorted_boundary_indices) * 0.25))
+        top_candidates = sorted_boundary_indices[:top_candidates_count]
+        
+        # Random selection from top boundary candidates
+        intruder_idx = random.choice(top_candidates)
+        
+        return intruder_idx
+    
+    def _sample_intruder_hard(self, clustering_data: Dict, source_cluster_id: int, 
+                             cluster_stats: Dict) -> int:
+        """Sample a hard intruder from the closest cluster, closest point to centroid."""
+        centroids = clustering_data['cluster_centers']
+        source_centroid = centroids[source_cluster_id]
+        
+        # Find candidate clusters (excluding source)
+        candidate_clusters = [cid for cid in cluster_stats.keys() if cid != source_cluster_id]
+        
+        # Find the semantically closest cluster
+        distances = euclidean_distances(source_centroid.reshape(1, -1), centroids[candidate_clusters]).flatten()
+        closest_cluster_idx = np.argmin(distances)
+        target_cluster = candidate_clusters[closest_cluster_idx]
+        
+        # Get the point closest to the target cluster's centroid
+        target_indices = cluster_stats[target_cluster]['indices']
+        target_distances = cluster_stats[target_cluster]['distances_to_centroid']
+        
+        # Find the index of the point closest to the centroid
+        closest_point_idx = np.argmin(target_distances)
+        intruder_idx = target_indices[closest_point_idx]
+        
+        return intruder_idx
+    
+    def _sample_intruder(self, clustering_data: Dict, source_cluster_id: int, 
+                        cluster_stats: Dict, difficulty: str) -> int:
+        """Sample an intruder based on difficulty level."""
+        if difficulty == 'easy':
+            return self._sample_intruder_easy(clustering_data, source_cluster_id, cluster_stats)
+        elif difficulty == 'medium':
+            return self._sample_intruder_medium(clustering_data, source_cluster_id, cluster_stats)
+        elif difficulty == 'hard':
+            return self._sample_intruder_hard(clustering_data, source_cluster_id, cluster_stats)
+        else:
+            raise ValueError(f"Unknown difficulty level: {difficulty}")
+    
     def generate_intrusion_examples(self, clustering_data_1: Dict, clustering_data_2: Dict,
                                   total_triplets: int = 50,
-                                  difficulty_distribution: Tuple[float, float, float] = (0.3, 0.4, 0.3)) -> Tuple[Dict[str, List[Dict]], Dict[str, Dict]]:
+                                  difficulty_distribution: Tuple[float, float, float] = (0.33, 0.33, 0.34)) -> Tuple[Dict[str, List[Dict]], Dict[str, Dict]]:
         """
-        Generate intrusion detection examples for two clustering methods.
+        Generate intrusion detection examples for two clustering methods with difficulty-based intruder sampling.
         
         Args:
             clustering_data_1: First clustering method results
@@ -227,37 +329,6 @@ class IntrusionDataGenerator:
         examples_by_method = {}
         solutions_by_method = {}
         
-        # Pre-compute cluster statistics for both methods to find common difficulty constraints
-        method_cluster_stats = {}
-        method_difficulty_clusters = {}
-        
-        for method_name, clustering_data in [("method_1", clustering_data_1), ("method_2", clustering_data_2)]:
-            cluster_stats = self._compute_cluster_statistics(clustering_data)
-            difficulty_clusters = self._categorize_difficulty(cluster_stats)
-            method_cluster_stats[method_name] = cluster_stats
-            method_difficulty_clusters[method_name] = difficulty_clusters
-            
-            print(f"{method_name} difficulty distribution: Easy={len(difficulty_clusters['easy'])}, "
-                  f"Medium={len(difficulty_clusters['medium'])}, Hard={len(difficulty_clusters['hard'])}")
-        
-        # Find the minimum available clusters across both methods for each difficulty
-        min_easy = min(len(method_difficulty_clusters['method_1']['easy']), 
-                      len(method_difficulty_clusters['method_2']['easy']))
-        min_medium = min(len(method_difficulty_clusters['method_1']['medium']), 
-                        len(method_difficulty_clusters['method_2']['medium']))
-        min_hard = min(len(method_difficulty_clusters['method_1']['hard']), 
-                      len(method_difficulty_clusters['method_2']['hard']))
-        
-        # Adjust counts to ensure both methods can generate the same number
-        actual_easy = min(easy_per_method, min_easy * 10)  # Allow up to 10 examples per cluster
-        actual_medium = min(medium_per_method, min_medium * 10)
-        actual_hard = min(hard_per_method, min_hard * 10)
-        
-        print(f"Adjusted counts to ensure consistency:")
-        print(f"  Easy: {actual_easy} (was {easy_per_method})")
-        print(f"  Medium: {actual_medium} (was {medium_per_method})")
-        print(f"  Hard: {actual_hard} (was {hard_per_method})")
-        
         # Process both clustering methods
         for method_idx, (method_name, clustering_data) in enumerate([
             ("method_1", clustering_data_1), 
@@ -270,32 +341,54 @@ class IntrusionDataGenerator:
             solutions_by_method[method_name] = {}
             example_id = 0
             
-            # Use pre-computed statistics
-            cluster_stats = method_cluster_stats[method_name]
-            difficulty_clusters = method_difficulty_clusters[method_name]
+            # Compute cluster statistics
+            cluster_stats = self._compute_cluster_statistics(clustering_data)
+            available_clusters = list(cluster_stats.keys())
             
-            # Generate examples for each difficulty level using adjusted counts
+            if len(available_clusters) == 0:
+                print(f"  Warning: No valid clusters available for {method_name}")
+                continue
+            
+            # Generate examples for each difficulty level
             difficulty_counts = {
-                'easy': actual_easy,
-                'medium': actual_medium,
-                'hard': actual_hard
+                'easy': easy_per_method,
+                'medium': medium_per_method,
+                'hard': hard_per_method
             }
             
+            # Track cluster usage counts to maximize utilization
+            cluster_usage_counts = {cluster_id: 0 for cluster_id in available_clusters}
+            
+            # Track document diversity failures
+            doc_diversity_failures = 0
+            
             for difficulty, count in difficulty_counts.items():
-                available_clusters = difficulty_clusters[difficulty]
-                if len(available_clusters) == 0:
-                    print(f"  Warning: No {difficulty} clusters available for {method_name}")
-                    continue
+                print(f"  Generating {count} {difficulty} examples...")
                 
-                for _ in range(count):
-                    # Sample source cluster
-                    source_cluster = random.choice(available_clusters)
+                for _ in tqdm(range(count)):
+                    # Create weights favoring less-used clusters
+                    weights = []
+                    for cluster_id in available_clusters:
+                        usage_count = cluster_usage_counts[cluster_id]
+                        # Weight inversely proportional to usage count + 1
+                        weight = 1.0 / (usage_count + 1)
+                        weights.append(weight)
+                    
+                    # Weighted random selection for source cluster
+                    source_cluster = random.choices(available_clusters, weights=weights, k=1)[0]
+                    
+                    # Increment usage count
+                    cluster_usage_counts[source_cluster] += 1
                     
                     # Sample positive examples
-                    pos1_idx, pos2_idx = self._sample_positive_examples(cluster_stats, source_cluster)
+                    pos1_idx, pos2_idx, doc_diversity_satisfied = self._sample_positive_examples(cluster_stats, source_cluster)
                     
-                    # Sample intruder
-                    intruder_idx = self._sample_intruder(clustering_data, source_cluster, difficulty, cluster_stats)
+                    # Track document diversity failures
+                    if not doc_diversity_satisfied:
+                        doc_diversity_failures += 1
+                    
+                    # Sample intruder based on difficulty
+                    intruder_idx = self._sample_intruder(clustering_data, source_cluster, cluster_stats, difficulty)
                     
                     # Get sentence texts
                     pos1_text = self.chain_sents[pos1_idx]
@@ -344,6 +437,9 @@ class IntrusionDataGenerator:
             }
             
             print(f"  Generated and shuffled {len(examples_by_method[method_name])} examples for {method_name}")
+            unique_clusters_used = len([c for c in cluster_usage_counts if cluster_usage_counts[c] > 0])
+            print(f"  Unique clusters used: {unique_clusters_used} out of {len(available_clusters)} available")
+            print(f"  Document diversity failures: {doc_diversity_failures} out of {len(examples_by_method[method_name])} examples")
         
         total_examples = sum(len(examples) for examples in examples_by_method.values())
         print(f"Generated {total_examples} total examples across both methods")
@@ -404,7 +500,7 @@ def evaluate_predictions(csv_path: str, solutions_path: str, predictions_path: s
     # Breakdown by difficulty
     difficulty_stats = {}
     for difficulty in ['easy', 'medium', 'hard']:
-        difficulty_indices = [i for i, sol in solutions.items() if sol['difficulty'] == difficulty]
+        difficulty_indices = [i for i, sol in solutions.items() if sol.get('difficulty') == difficulty]
         if difficulty_indices:
             difficulty_correct = sum(1 for i in difficulty_indices if predictions[i] == solutions[i]['answer'])
             difficulty_total = len(difficulty_indices)
@@ -443,10 +539,12 @@ def main():
     parser.add_argument('-c', '--config', default='base', help='Configuration name')
     parser.add_argument('--output-csv', default='intrusion_examples.tsv', help='Output CSV path')
     parser.add_argument('--output-solutions', default='intrusion_solutions.pkl', help='Output solutions path')
-    parser.add_argument('--total-triplets', type=int, default=50,
-                       help='Total number of triplets to generate across both methods (default: 300)')
-    parser.add_argument('--difficulty-split', nargs=3, type=float, default=[0.1, 0.5, 0.4],
-                       help='Difficulty distribution: easy medium hard (must sum to 1.0, default: 0.3 0.4 0.3)')
+    parser.add_argument('--total-triplets', type=int, default=150,
+                       help='Total number of triplets to generate per method (default: 150)')
+    parser.add_argument('--difficulty-split', nargs=3, type=float, default=[0.33, 0.33, 0.34],
+                       help='Difficulty distribution: easy medium hard (must sum to 1.0, default: 0.33 0.33 0.34)')
+    parser.add_argument('--exact-counts', nargs=3, type=int, metavar=('EASY', 'MEDIUM', 'HARD'),
+                       help='Exact number of examples per difficulty: easy medium hard (overrides --difficulty-split and --total-triplets)')
     parser.add_argument('--evaluate', help='Path to predictions file for evaluation')
     
     args = parser.parse_args()
@@ -465,12 +563,32 @@ def main():
         with open("./data/mfc/immigration/clustering/clusters_100_0.5.pickle", 'rb') as f:
             clustering_data_2 = pickle.load(f)
         
+        # Determine counts based on user input (exact counts take precedence)
+        if args.exact_counts:
+            # Use exact counts provided by user
+            easy_count, medium_count, hard_count = args.exact_counts
+            total_triplets = easy_count + medium_count + hard_count
+            difficulty_distribution = (easy_count / total_triplets, medium_count / total_triplets, hard_count / total_triplets)
+            print(f"Using exact counts: Easy={easy_count}, Medium={medium_count}, Hard={hard_count}")
+        else:
+            # Use ratio-based distribution with auto-detection for even splits
+            total_triplets = args.total_triplets
+            if total_triplets in [100, 150]:
+                # Auto-detect even split for common totals
+                even_split = total_triplets // 3
+                remainder = total_triplets % 3
+                difficulty_distribution = (even_split / total_triplets, even_split / total_triplets, (even_split + remainder) / total_triplets)
+                print(f"Auto-detected even split for {total_triplets} examples: {even_split}, {even_split}, {even_split + remainder}")
+            else:
+                difficulty_distribution = tuple(args.difficulty_split)
+                print(f"Using ratio-based distribution with {total_triplets} total triplets: {difficulty_distribution}")
+        
         # Generate intrusion data
         generator = IntrusionDataGenerator(config["processed_chains_path"], config["seed"])
         examples, solutions = generator.generate_intrusion_examples(
             clustering_data_1, clustering_data_2, 
-            total_triplets=args.total_triplets,
-            difficulty_distribution=tuple(args.difficulty_split)
+            total_triplets=total_triplets,
+            difficulty_distribution=difficulty_distribution
         )
         
         # Save data separately for each method

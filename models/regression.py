@@ -208,7 +208,7 @@ if __name__ == "__main__":
 
     model = RegressionModel(config)
 
-    with open("./data/mfc/immigration/clustering/clusters_250_0.5_.pickle", 'rb') as f:
+    with open("./data/mfc/immigration/clustering/clusters_350_0.5.pickle", 'rb') as f:
         clustering_data = pickle.load(f)
 
     data = model.create_dataset(config, clustering_data, 
