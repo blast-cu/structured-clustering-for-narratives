@@ -5,6 +5,7 @@ import pickle
 import random
 import re
 import shutil
+import traceback
 
 import numpy as np
 from pyhocon import ConfigFactory
@@ -97,7 +98,10 @@ class ClusterAnalyzer:
             if idx not in chains_to_keep:
                 continue
             if label not in clusters:
-                clusters[label] = []
+                clusters[label] = {
+                    "chains": [],
+                    "theme": ""
+                }
 
             stance = ""
             char_roles = processed_chains['chain_group_roles'][idx]
@@ -111,7 +115,7 @@ class ClusterAnalyzer:
                 "char_role": char_roles,
                 "stance": stance
             }
-            clusters[label].append(chain_entry)
+            clusters[label]['chains'].append(chain_entry)
         return clusters
 
     def process_clusters(self, clusters, num_workers, save_interval, sequential=False):
@@ -152,6 +156,7 @@ class ClusterAnalyzer:
 
                     except Exception as e:
                         print(f"Error processing document {cluster_idx}: {e}", flush=True)
+                        traceback.print_exc()
                         pbar.update(1)  # Still update progress bar even if there's an error
         else:
             # Parallel processing - only submit futures for unprocessed documents
@@ -187,6 +192,7 @@ class ClusterAnalyzer:
 
                         except Exception as e:
                             print(f"Error processing document {cluster_idx}: {e}", flush=True)
+                            traceback.print_exc()
                             pbar.update(1)  # Still update progress bar even if there's an error
 
         # Final save at the end, in case it wasn't saved during the last interval
@@ -199,9 +205,9 @@ class ClusterAnalyzer:
             domain = "Gun Control"
         elif self.domain == 'immigration':
             domain = "Immigration"
-
-        items_to_sample = min(self.chains_per_cluster, len(cluster))
-        sampled_items = random.sample(cluster, items_to_sample)
+        
+        items_to_sample = min(self.chains_per_cluster, len(cluster['chains']))
+        sampled_items = random.sample(cluster['chains'], items_to_sample)
 
         sentences = ""
         idx = 1
@@ -235,7 +241,7 @@ class ClusterAnalyzer:
                 try:
                     response = ClusterTheme.model_validate_json(structured_response)
                     response = response.model_dump()
-                    return response
+                    return response['theme']
                 except Exception as e:
                     print("Exception: " + str(e), flush=True)
                     print("Invalid response. Please try again.", flush=True)
@@ -330,7 +336,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    with open("./data/mfc/immigration/clustering/clusters_100_0.5.pickle", 'rb') as f:
+    with open("./data/mfc/guncontrol/clustering/clusters_300_0.5_.pickle", 'rb') as f:
         clustering_data = pickle.load(f)
 
     with open(config["processed_chains_path"], "rb") as f:
