@@ -65,19 +65,19 @@ class ClusterMetrics:
         print()
         
         print("--- COHESION (Within-Cluster Sum of Squares) ---")
-        print(f"WCSS: {metrics['cohesion']:.4f}")
+        print(f"WCSS: {metrics['cohesion']:.2f}")
         print("Interpretation: Lower values indicate tighter clusters")
         print("Guide: Compare across different k values - lower is better")
         print()
         
         print("--- SEPARATION (Between-Cluster Sum of Squares) ---")
-        print(f"BCSS: {metrics['separation']:.4f}")
+        print(f"BCSS: {metrics['separation']:.2f}")
         print("Interpretation: Higher values indicate better separated clusters")
         print("Guide: Compare across different k values - higher is better")
         print()
         
         print("--- CALINSKI-HARABASZ INDEX ---")
-        print(f"CH Index: {metrics['calinski_harabasz']:.4f}")
+        print(f"CH Index: {metrics['calinski_harabasz']:.2f}")
         print("Interpretation: Higher values indicate better clustering")
         if metrics['calinski_harabasz'] > 100:
             print("Guide: Very good clustering (CH > 100)")
@@ -88,7 +88,7 @@ class ClusterMetrics:
         print()
         
         print("--- SILHOUETTE SCORE ---")
-        print(f"Silhouette Score: {metrics['silhouette']:.4f}")
+        print(f"Silhouette Score: {metrics['silhouette']:.2f}")
         print("Interpretation: Range [-1, 1], higher values indicate better clustering")
         if metrics['silhouette'] > 0.7:
             print("Guide: Excellent clustering (> 0.7)")
@@ -116,7 +116,7 @@ def main(clustering_data):
 
 if __name__ == "__main__":
     # Example usage
-    with open("./data/mfc/immigration/clustering/clusters_150_0.0.pickle", "rb") as f:
+    with open("./data/mfc/immigration/clustering/clusters_50_0.0.pickle", "rb") as f:
         clustering_data = pickle.load(f)
 
     main(clustering_data)
