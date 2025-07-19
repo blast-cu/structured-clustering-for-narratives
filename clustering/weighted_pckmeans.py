@@ -13,6 +13,7 @@ from tqdm import tqdm
 from clustering.initializer.base_initializer import BaseInitializer
 from clustering.initializer.cl_kmeans_plus_plus import KMeansPlusPlusInit, InitializationStrategy
 from clustering.metrics.purity import Purity
+from clustering.metrics.cluster_metrics import ClusterMetrics
 from models.regression import RegressionModel
 from utils.constraint_flat_db import ConstraintFlatDB
 from utils.constraints_graph_db import ConstraintGraphDB
@@ -593,6 +594,12 @@ if __name__ == '__main__':
     purity_calculator.compute_purity()
     purity_calculator.print_results()
     print("======================\n", flush=True)
+
+    # Compute and print cluster quality metrics
+    print("\n=== Cluster Quality Metrics ===", flush=True)
+    cluster_metrics = ClusterMetrics(clustering_data)
+    cluster_metrics.print_results()
+    print("==============================\n", flush=True)
 
     # Run regression model after purity computation
     print("\n=== Regression Results ===", flush=True)

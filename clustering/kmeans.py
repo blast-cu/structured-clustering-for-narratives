@@ -10,6 +10,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.cluster import KMeans
 
 from clustering.metrics.purity import Purity
+from clustering.metrics.cluster_metrics import ClusterMetrics
 from models.regression import RegressionModel
 
 # Disable tokenizer parallelism warning
@@ -54,6 +55,12 @@ class KMeansClustering:
         purity_calculator.compute_purity()
         purity_calculator.print_results()
         print("======================\n", flush=True)
+
+        # Compute and print cluster quality metrics
+        print("\n=== Cluster Quality Metrics ===", flush=True)
+        cluster_metrics = ClusterMetrics(clustering_data)
+        cluster_metrics.print_results()
+        print("==============================\n", flush=True)
 
         # Run regression model after purity computation
         print("\n=== Regression Results ===", flush=True)
