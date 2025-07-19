@@ -111,12 +111,12 @@ def main(clustering_data):
     """Main function to compute and display clustering metrics"""
     metrics_calculator = ClusterMetrics(clustering_data)
     metrics_calculator.print_results()
-    return metrics_calculator.compute_all_metrics()
+    # return metrics_calculator.compute_all_metrics()
 
 
 if __name__ == "__main__":
     # Example usage
-    with open("./data/mfc/immigration/clustering/clusters_50_0.0.pickle", "rb") as f:
+    with open("./data/mfc/immigration/clustering/clusters_350_0.01_.pickle", "rb") as f:
         clustering_data = pickle.load(f)
 
     main(clustering_data)
