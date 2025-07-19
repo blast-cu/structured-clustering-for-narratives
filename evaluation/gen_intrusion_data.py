@@ -11,15 +11,17 @@ from tqdm import tqdm
 
 
 class IntrusionDataGenerator:
-    def __init__(self, processed_chains_path: str, random_seed: int = 42):
+    def __init__(self, processed_chains_path: str, random_seed: int = 42, jaccard_threshold: float = 0.8):
         """
         Initialize the intrusion data generator.
         
         Args:
             processed_chains_path: Path to processed event chains pickle file
             random_seed: Random seed for reproducibility
+            jaccard_threshold: Threshold for rejecting similar positive pairs (default: 0.8)
         """
         self.random_seed = random_seed
+        self.jaccard_threshold = jaccard_threshold
         random.seed(random_seed)
         np.random.seed(random_seed)
         
@@ -30,6 +32,7 @@ class IntrusionDataGenerator:
             self.chain_sents = data['chain_sents']
         
         print(f"Loaded {len(self.processed_chains)} processed event chains")
+        print(f"Jaccard similarity threshold: {self.jaccard_threshold}")
         
         # Verify index mapping
         self._verify_index_mapping()
@@ -48,6 +51,31 @@ class IntrusionDataGenerator:
                 raise ValueError(f"Text mismatch at index {idx}")
         
         print(" Index mapping verified successfully")
+    
+    def _calculate_jaccard_similarity(self, text1: str, text2: str) -> float:
+        """Calculate Jaccard similarity between two texts based on word tokens, excluding stop words."""
+        # Define common English stop words
+        stop_words = {
+            'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 
+            'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the', 'to', 'was', 'will', 'with',
+            'i', 'you', 'we', 'they', 'them', 'their', 'this', 'these', 'those', 'have', 
+            'had', 'been', 'being', 'do', 'does', 'did', 'can', 'could', 'should', 'would',
+            'may', 'might', 'must', 'shall', 'not', 'no', 'nor', 'but', 'or', 'yet', 'so',
+            'if', 'when', 'where', 'why', 'how', 'what', 'which', 'who', 'whom', 'whose'
+        }
+        
+        # Tokenize and filter out stop words
+        words1 = {word for word in text1.lower().split() if word not in stop_words and len(word) > 1}
+        words2 = {word for word in text2.lower().split() if word not in stop_words and len(word) > 1}
+        
+        # Calculate Jaccard similarity: intersection / union
+        intersection = len(words1.intersection(words2))
+        union = len(words1.union(words2))
+        
+        if union == 0:
+            return 0.0
+        
+        return intersection / union
     
     def _compute_cluster_statistics(self, clustering_data: Dict) -> Dict:
         """Compute basic statistics for each cluster."""
@@ -112,7 +140,13 @@ class IntrusionDataGenerator:
             doc_id_2 = self.processed_chains[positive_2_idx]['doc_id']
             
             if doc_id_1 != doc_id_2:
-                break
+                # Also check Jaccard similarity - reject if too similar
+                text_1 = self.chain_sents[positive_1_idx]
+                text_2 = self.chain_sents[positive_2_idx]
+                jaccard_sim = self._calculate_jaccard_similarity(text_1, text_2)
+                
+                if jaccard_sim < self.jaccard_threshold:
+                    break
         else:
             # If we couldn't find different doc_ids in top 50%, expand search
             found_diverse_pair = False
@@ -122,9 +156,15 @@ class IntrusionDataGenerator:
                     doc_id_1 = self.processed_chains[idx1]['doc_id']
                     doc_id_2 = self.processed_chains[idx2]['doc_id']
                     if doc_id_1 != doc_id_2:
-                        positive_1_idx, positive_2_idx = idx1, idx2
-                        found_diverse_pair = True
-                        break
+                        # Also check Jaccard similarity in expanded search
+                        text_1 = self.chain_sents[idx1]
+                        text_2 = self.chain_sents[idx2]
+                        jaccard_sim = self._calculate_jaccard_similarity(text_1, text_2)
+                        
+                        if jaccard_sim < self.jaccard_threshold:
+                            positive_1_idx, positive_2_idx = idx1, idx2
+                            found_diverse_pair = True
+                            break
                 else:
                     continue
                 break
@@ -139,21 +179,21 @@ class IntrusionDataGenerator:
     
     def _sample_intruder_easy(self, clustering_data: Dict, source_cluster_id: int, 
                              cluster_stats: Dict) -> int:
-        """Sample an easy intruder from top 25% clusters, top 25% points."""
+        """Sample an easy intruder from top 25% points in random cluster from top 25% semantically different clusters."""
         centroids = clustering_data['cluster_centers']
         source_centroid = centroids[source_cluster_id]
         
         # Find candidate clusters (excluding source)
         candidate_clusters = [cid for cid in cluster_stats.keys() if cid != source_cluster_id]
         
-        # Get distances to all candidate clusters and select top 25% closest
+        # Get distances to all candidate clusters and select top 25% farthest (most different)
         distances = euclidean_distances(source_centroid.reshape(1, -1), centroids[candidate_clusters]).flatten()
         top_25_percent = max(1, int(len(candidate_clusters) * 0.25))
-        closest_cluster_indices = np.argsort(distances)[:top_25_percent]
-        close_clusters = [candidate_clusters[i] for i in closest_cluster_indices]
+        farthest_cluster_indices = np.argsort(distances)[-top_25_percent:]  # Take the farthest clusters
+        different_clusters = [candidate_clusters[i] for i in farthest_cluster_indices]
         
-        # Randomly select from the top 25% closest clusters
-        target_cluster = random.choice(close_clusters)
+        # Randomly select from the top 25% most different clusters
+        target_cluster = random.choice(different_clusters)
         
         # Get top 25% points closest to target cluster's centroid
         target_indices = cluster_stats[target_cluster]['indices']
@@ -171,100 +211,39 @@ class IntrusionDataGenerator:
     
     def _sample_intruder_medium(self, clustering_data: Dict, source_cluster_id: int, 
                                cluster_stats: Dict) -> int:
-        """Sample a medium intruder from boundary points almost assigned to source cluster - vectorized."""
+        """Sample a medium intruder from top 25% points in random cluster from top 25% semantically similar clusters."""
         centroids = clustering_data['cluster_centers']
         source_centroid = centroids[source_cluster_id]
-        embeddings = clustering_data['embeddings']
         
         # Find candidate clusters (excluding source)
         candidate_clusters = [cid for cid in cluster_stats.keys() if cid != source_cluster_id]
         
-        if not candidate_clusters:
-            # Fallback to random cluster selection if no candidates
-            all_clusters = list(cluster_stats.keys())
-            if source_cluster_id in all_clusters:
-                all_clusters.remove(source_cluster_id)
-            if not all_clusters:
-                # Emergency fallback - use any point from source cluster
-                return cluster_stats[source_cluster_id]['indices'][0]
-            random_cluster = random.choice(all_clusters)
-            random_indices = cluster_stats[random_cluster]['indices']
-            return int(random.choice(random_indices))
+        # Get distances to all candidate clusters and select top 25% closest (most similar)
+        distances = euclidean_distances(source_centroid.reshape(1, -1), centroids[candidate_clusters]).flatten()
+        top_25_percent = max(1, int(len(candidate_clusters) * 0.25))
+        closest_cluster_indices = np.argsort(distances)[:top_25_percent]
+        similar_clusters = [candidate_clusters[i] for i in closest_cluster_indices]
         
-        # Collect all candidate points and their cluster info
-        all_candidate_indices = []
-        cluster_assignments = []
+        # Randomly select from the top 25% most similar clusters
+        target_cluster = random.choice(similar_clusters)
         
-        for cluster_id in candidate_clusters:
-            cluster_indices = cluster_stats[cluster_id]['indices']
-            all_candidate_indices.extend(cluster_indices)
-            cluster_assignments.extend([cluster_id] * len(cluster_indices))
+        # Get top 25% points closest to target cluster's centroid
+        target_indices = cluster_stats[target_cluster]['indices']
+        target_distances = cluster_stats[target_cluster]['distances_to_centroid']
         
-        if not all_candidate_indices:
-            # Fallback to random cluster selection
-            all_clusters = list(cluster_stats.keys())
-            if source_cluster_id in all_clusters:
-                all_clusters.remove(source_cluster_id)
-            if not all_clusters:
-                return cluster_stats[source_cluster_id]['indices'][0]  # Emergency fallback
-            random_cluster = random.choice(all_clusters)
-            random_indices = cluster_stats[random_cluster]['indices']
-            return random.choice(random_indices)
+        # Select top 25% closest points to centroid
+        top_25_percent_points = max(1, int(len(target_indices) * 0.25))
+        closest_point_indices = np.argsort(target_distances)[:top_25_percent_points]
+        close_points = target_indices[closest_point_indices]
         
-        # Convert to numpy arrays for vectorized operations
-        candidate_indices = np.array(all_candidate_indices)
-        cluster_assignments = np.array(cluster_assignments)
-        
-        # Get embeddings for all candidate points
-        candidate_embeddings = embeddings[candidate_indices]
-        
-        # Vectorized distance calculations
-        # Distance from all points to source centroid
-        dist_to_source = euclidean_distances(candidate_embeddings, source_centroid.reshape(1, -1)).flatten()
-        
-        # Distance from each point to its own cluster centroid
-        # Group by cluster for efficient computation
-        dist_to_own = np.zeros(len(candidate_indices))
-        for cluster_id in candidate_clusters:
-            mask = cluster_assignments == cluster_id
-            if np.any(mask):
-                cluster_centroid = centroids[cluster_id]
-                masked_embeddings = candidate_embeddings[mask]
-                cluster_distances = euclidean_distances(masked_embeddings, cluster_centroid.reshape(1, -1)).flatten()
-                dist_to_own[mask] = cluster_distances
-        
-        # Calculate the difference - smaller positive values mean "almost assigned"
-        distance_diff = dist_to_source - dist_to_own
-        
-        # Find boundary candidates: points within 50% difference
-        boundary_mask = distance_diff <= (dist_to_own * 0.5)
-        
-        if not np.any(boundary_mask):
-            # Fallback: find the point closest to source centroid
-            closest_idx = np.argmin(dist_to_source)
-            return int(candidate_indices[closest_idx])
-        
-        # Filter to boundary candidates
-        boundary_indices = candidate_indices[boundary_mask]
-        boundary_diff = distance_diff[boundary_mask]
-        boundary_dist_to_source = dist_to_source[boundary_mask]
-        
-        # Sort by distance difference (smallest first) and then by distance to source
-        sort_keys = np.lexsort((boundary_dist_to_source, boundary_diff))
-        sorted_boundary_indices = boundary_indices[sort_keys]
-        
-        # Select from top 25% of boundary candidates or at least 1
-        top_candidates_count = max(1, int(len(sorted_boundary_indices) * 0.25))
-        top_candidates = sorted_boundary_indices[:top_candidates_count]
-        
-        # Random selection from top boundary candidates
-        intruder_idx = random.choice(top_candidates)
+        # Randomly select from top 25% closest points
+        intruder_idx = random.choice(close_points)
         
         return intruder_idx
     
     def _sample_intruder_hard(self, clustering_data: Dict, source_cluster_id: int, 
                              cluster_stats: Dict) -> int:
-        """Sample a hard intruder from the closest cluster, closest point to centroid."""
+        """Sample a hard intruder from top 25% points in the most semantically similar cluster."""
         centroids = clustering_data['cluster_centers']
         source_centroid = centroids[source_cluster_id]
         
@@ -276,13 +255,17 @@ class IntrusionDataGenerator:
         closest_cluster_idx = np.argmin(distances)
         target_cluster = candidate_clusters[closest_cluster_idx]
         
-        # Get the point closest to the target cluster's centroid
+        # Get top 25% points closest to the target cluster's centroid
         target_indices = cluster_stats[target_cluster]['indices']
         target_distances = cluster_stats[target_cluster]['distances_to_centroid']
         
-        # Find the index of the point closest to the centroid
-        closest_point_idx = np.argmin(target_distances)
-        intruder_idx = target_indices[closest_point_idx]
+        # Select top 25% closest points to centroid
+        top_25_percent_points = max(1, int(len(target_indices) * 0.25))
+        closest_point_indices = np.argsort(target_distances)[:top_25_percent_points]
+        close_points = target_indices[closest_point_indices]
+        
+        # Randomly select from top 25% closest points
+        intruder_idx = random.choice(close_points)
         
         return intruder_idx
     
@@ -546,6 +529,8 @@ def main():
     parser.add_argument('--exact-counts', nargs=3, type=int, metavar=('EASY', 'MEDIUM', 'HARD'),
                        help='Exact number of examples per difficulty: easy medium hard (overrides --difficulty-split and --total-triplets)')
     parser.add_argument('--evaluate', help='Path to predictions file for evaluation')
+    parser.add_argument('--jaccard-threshold', type=float, default=0.6,
+                       help='Jaccard similarity threshold for rejecting similar positive pairs (default: 0.8)')
     
     args = parser.parse_args()
     
@@ -557,10 +542,10 @@ def main():
         config = ConfigFactory.parse_file('./config.conf')[args.config]
         
         # Load clustering results
-        with open("./data/mfc/immigration/clustering/clusters_200_0.0.pickle", 'rb') as f:
+        with open("./data/mfc/immigration/clustering/clusters_150_0.0.pickle", 'rb') as f:
             clustering_data_1 = pickle.load(f)
         
-        with open("./data/mfc/immigration/clustering/clusters_200_0.01_.pickle", 'rb') as f:
+        with open("./data/mfc/immigration/clustering/clusters_150_0.01_.pickle", 'rb') as f:
             clustering_data_2 = pickle.load(f)
         
         # Determine counts based on user input (exact counts take precedence)
@@ -584,7 +569,7 @@ def main():
                 print(f"Using ratio-based distribution with {total_triplets} total triplets: {difficulty_distribution}")
         
         # Generate intrusion data
-        generator = IntrusionDataGenerator(config["processed_chains_path"], config["seed"])
+        generator = IntrusionDataGenerator(config["processed_chains_path"], config["seed"], args.jaccard_threshold)
         examples, solutions = generator.generate_intrusion_examples(
             clustering_data_1, clustering_data_2, 
             total_triplets=total_triplets,
