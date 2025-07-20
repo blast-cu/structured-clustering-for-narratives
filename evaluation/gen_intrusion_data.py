@@ -3,7 +3,7 @@ import json
 import pickle
 import random
 import csv
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple
 import numpy as np
 from sklearn.metrics.pairwise import euclidean_distances
 from pyhocon import ConfigFactory
@@ -30,6 +30,7 @@ class IntrusionDataGenerator:
             data = pickle.load(f)
             self.processed_chains = data['processed_chains']
             self.chain_sents = data['chain_sents']
+            self.chain_group_roles = data['chain_group_roles']
         
         print(f"Loaded {len(self.processed_chains)} processed event chains")
         print(f"Jaccard similarity threshold: {self.jaccard_threshold}")
@@ -105,7 +106,7 @@ class IntrusionDataGenerator:
         return cluster_stats
     
     
-    def _sample_positive_examples(self, cluster_stats: Dict, cluster_id: int) -> Tuple[int, int, bool]:
+    def _sample_positive_examples(self, cluster_stats: Dict, cluster_id: int, clustering_data: Dict) -> Tuple[int, int, bool]:
         """Sample two positive examples from a cluster."""
         cluster_indices = cluster_stats[cluster_id]['indices']
         distances = cluster_stats[cluster_id]['distances_to_centroid']
@@ -364,7 +365,7 @@ class IntrusionDataGenerator:
                     cluster_usage_counts[source_cluster] += 1
                     
                     # Sample positive examples
-                    pos1_idx, pos2_idx, doc_diversity_satisfied = self._sample_positive_examples(cluster_stats, source_cluster)
+                    pos1_idx, pos2_idx, doc_diversity_satisfied = self._sample_positive_examples(cluster_stats, source_cluster, clustering_data)
                     
                     # Track document diversity failures
                     if not doc_diversity_satisfied:
@@ -373,10 +374,10 @@ class IntrusionDataGenerator:
                     # Sample intruder based on difficulty
                     intruder_idx = self._sample_intruder(clustering_data, source_cluster, cluster_stats, difficulty)
                     
-                    # Get sentence texts
-                    pos1_text = self.chain_sents[pos1_idx]
-                    pos2_text = self.chain_sents[pos2_idx]
-                    intruder_text = self.chain_sents[intruder_idx]
+                    # Get sentence texts with character roles
+                    pos1_text = self.chain_sents[pos1_idx] + " " + str(self.chain_group_roles[pos1_idx])
+                    pos2_text = self.chain_sents[pos2_idx] + " " + str(self.chain_group_roles[pos2_idx])
+                    intruder_text = self.chain_sents[intruder_idx] + " " + str(self.chain_group_roles[intruder_idx])
                     
                     # Create triplet with random order
                     sentences = [pos1_text, pos2_text, intruder_text]
@@ -469,7 +470,8 @@ def evaluate_predictions(csv_path: str, solutions_path: str, predictions_path: s
     
     # Load predictions
     with open(predictions_path, 'r') as f:
-        predictions = [int(line.strip()) for line in f]
+        lines = f.readlines()
+    predictions = [int(line.strip()) for line in lines if line.strip()]
     
     if len(predictions) != len(solutions):
         raise ValueError(f"Mismatch: {len(predictions)} predictions vs {len(solutions)} examples")
@@ -528,7 +530,7 @@ def main():
                        help='Difficulty distribution: easy medium hard (must sum to 1.0, default: 0.33 0.33 0.34)')
     parser.add_argument('--exact-counts', nargs=3, type=int, metavar=('EASY', 'MEDIUM', 'HARD'),
                        help='Exact number of examples per difficulty: easy medium hard (overrides --difficulty-split and --total-triplets)')
-    parser.add_argument('--evaluate', help='Path to predictions file for evaluation')
+    parser.add_argument('--evaluate', action='store_true', help='Path to predictions file for evaluation')
     parser.add_argument('--jaccard-threshold', type=float, default=0.6,
                        help='Jaccard similarity threshold for rejecting similar positive pairs (default: 0.8)')
     
@@ -536,7 +538,10 @@ def main():
     
     if args.evaluate:
         # Evaluation mode
-        evaluate_predictions(args.output_csv, args.output_solutions, args.evaluate)
+        # evaluate_predictions(args.output_csv, args.output_solutions, args.evaluate)
+        evaluate_predictions("./data/mfc/guncontrol/intrusion_test/intrusion_examples_method_2.tsv",
+                             "./data/mfc/guncontrol/intrusion_test/intrusion_examples_method_2_solutions.pkl",
+                             "./data/mfc/guncontrol/intrusion_test/answers.txt")
     else:
         # Generation mode
         config = ConfigFactory.parse_file('./config.conf')[args.config]
@@ -579,7 +584,6 @@ def main():
         # Save data separately for each method
         output_prefix = args.output_csv.replace('.tsv', '').replace('.csv', '')
         generator.save_data_separate(examples, solutions, output_prefix)
-
 
 if __name__ == "__main__":
     main()
