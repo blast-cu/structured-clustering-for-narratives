@@ -173,7 +173,7 @@ class Trainer:
 
         best_model = None
         best_val_f1, best_val_acc = -np.inf, -np.inf
-        early_stopper = EarlyStopper(patience=5)
+        early_stopper = EarlyStopper(patience=5, min_delta=0.1)
         for epoch in range(self.config['epochs']):
             self.model.train()
             print("Epoch: ", epoch, flush=True)
