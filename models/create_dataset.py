@@ -1,12 +1,23 @@
 import argparse
+import os
 import pickle
 import random
+import sys
 
 import numpy as np
 import pandas as pd
 from pyhocon import ConfigFactory
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
+
+# Add project root to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+# Import the schemas module and create an alias for pickle compatibility
+import annotation.schemas as schemas
+sys.modules['schemas'] = schemas
 
 
 def create_dataset(config, clustering_data, processed_chains, corpus):

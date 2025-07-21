@@ -1,8 +1,6 @@
 import argparse
-import os
 import pickle
 import random
-import sys
 
 import numpy as np
 import torch
@@ -12,16 +10,6 @@ from transformers import AutoModel, AutoConfig, AutoTokenizer, get_linear_schedu
 from tqdm import tqdm
 
 from utils.early_stopper import EarlyStopper
-
-# Add project root to path
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
-
-# Import the schemas module and create an alias for pickle compatibility
-import annotation.schemas as schemas
-sys.modules['schemas'] = schemas
-
 
 class Model(torch.nn.Module):
     def __init__(self, config, device):
