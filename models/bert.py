@@ -284,6 +284,7 @@ class Trainer:
                     loss.backward()
                     optimizer.step()
                     scheduler.step()
+                    epoch_loss += loss.item()
             else:
                 print("Not using cluster features for training...", flush=True)
                 for inputs, labels in tqdm(train_dataloader):
@@ -294,8 +295,7 @@ class Trainer:
                     loss.backward()
                     optimizer.step()
                     scheduler.step()
-
-                epoch_loss += loss.item()
+                    epoch_loss += loss.item()
 
             print("Epoch Loss: ", epoch_loss / len(train_dataloader), flush=True)
 
