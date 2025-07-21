@@ -309,7 +309,7 @@ class Trainer:
             predicted_labels = []
             true_labels = []
             if self.config['use_cluster_feats'] or self.config['use_all_feats']:
-                for inputs, feats, labels in tqdm(train_dataloader):
+                for inputs, feats, labels in dataloader:
                     feats = feats.to(self.device)
                     labels = labels.to(self.device)
                     x = model(inputs, feats)
