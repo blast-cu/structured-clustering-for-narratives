@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 from pyhocon import ConfigFactory, HOCONConverter
 from sklearn.metrics import f1_score, accuracy_score
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 from sklearn.model_selection import train_test_split
 from transformers import AutoModel, AutoConfig, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
@@ -43,6 +43,11 @@ class Model(torch.nn.Module):
             
         input_dims = llm_config.hidden_size
 
+        if config['use_cluster_feats']:
+            input_dims += config['num_clusters']
+        elif config['use_all_feats']:
+            input_dims += config['num_clusters'] + config['num_char_feats']
+
         self.dropout = torch.nn.Dropout(0.3).to(self.device)
         self.classifier = torch.nn.Linear(input_dims, config['num_classes']).to(self.device)
 
@@ -70,14 +75,18 @@ class Model(torch.nn.Module):
 
 
 class Dataset(torch.utils.data.Dataset):
-    def __init__(self, inputs, labels):
+    def __init__(self, inputs, feats, labels):
         self.inputs = inputs
+        self.feats = feats
         self.labels = labels
 
     def __len__(self):
         return len(self.inputs)
 
     def __getitem__(self, index):
+        if self.feats is not None:
+            return self.inputs[index], self.feats[index], self.labels[index]
+        else:
             return self.inputs[index], self.labels[index]
 
 
@@ -98,8 +107,31 @@ class Trainer:
         self.model = Model(self.config, self.device)
         torch.set_default_dtype(torch.float32)
 
-    def create_dataset(self, config, clustering_data, processed_chains, corpus):
+    def create_dataset(self, clustering_data, processed_chains, corpus):
         print("Creating dataset...", flush=True)
+
+        immig_roles_stance = {
+            "Immigrants:Hero": 0,
+            "Immigrants:Threat": 0,
+            "Immigrants:Victim": 0,
+            "Immigration Advocates:Hero": 0,
+            "Immigration Advocates:Threat": 0,
+            "Immigration Advocates:Victim": 0,
+            "Government:Hero": 0,
+            "Government:Threat": 0,
+            "Government:Victim": 0,
+            "Judiciary:Hero": 0,
+            "Judiciary:Threat": 0,
+            "Judiciary:Victim": 0,
+            "Law Enforcement:Hero": 0,
+            "Law Enforcement:Threat": 0,
+            "Law Enforcement:Victim": 0,
+            "Politicians:Hero": 0,
+            "Politicians:Threat": 0,
+            "Politicians:Victim": 0,
+            "Stance:Pro": 0,
+            "Stance:Anti": 0
+        }
 
         doc_to_clusters = {}
 
@@ -110,6 +142,7 @@ class Trainer:
                     'chains': [],
                     'clusters': set(),
                     'cluster_freq': [0] * config['num_clusters'],
+                    'role_stance_freq': immig_roles_stance.copy(),
                     'chain_to_cluster': {},
                     'text': corpus[doc_id]['text'],
                     'frame_label': corpus[doc_id]['primary_frame']
@@ -119,15 +152,36 @@ class Trainer:
             doc_to_clusters[doc_id]['cluster_freq'][clustering_data['labels'][chain_idx]] += 1
             doc_to_clusters[doc_id]['chain_to_cluster'][chain_idx] = clustering_data['labels'][chain_idx]
 
+            chain_group_roles = processed_chains['chain_group_roles'][chain_idx]
+            for char, role in chain_group_roles.items():
+                key = "{}:{}".format(char, role)
+                if key in doc_to_clusters[doc_id]['role_stance_freq']:
+                    doc_to_clusters[doc_id]['role_stance_freq'][key] += 1
+
+            # generate a list using values of the role_stance_freq dictionary
+            doc_to_clusters[doc_id]['role_stance_freq_list'] = list(doc_to_clusters[doc_id]['role_stance_freq'].values())
+
         data = []
         for doc_id, doc in doc_to_clusters.items():
             data.append({
                 'doc_id': doc_id,
                 'text': doc['text'],
+                'cluster_feats': doc['cluster_freq'],
+                'role_stance_feats': doc['role_stance_freq_list'],
                 'frame_label': doc['frame_label']
             })
         
         df = pd.DataFrame(data)
+        
+        # Normalize cluster_feats and role_stance_feats to [0,1] using MinMaxScaler
+        cluster_scaler = MinMaxScaler()
+        role_stance_scaler = MinMaxScaler()
+        
+        cluster_feats_normalized = cluster_scaler.fit_transform(df['cluster_feats'].tolist())
+        role_stance_feats_normalized = role_stance_scaler.fit_transform(df['role_stance_feats'].tolist())
+        
+        df['cluster_feats'] = cluster_feats_normalized.tolist()
+        df['role_stance_feats'] = role_stance_feats_normalized.tolist()
         
         label_encoder = LabelEncoder()
         df['frame_label_encoded'] = label_encoder.fit_transform(df['frame_label'])
@@ -146,19 +200,40 @@ class Trainer:
         train_df = train_df.reset_index(drop=True)
         dev_df = dev_df.reset_index(drop=True)
         test_df = test_df.reset_index(drop=True)
-        
+
+        if self.config['use_cluster_feats']:
+            train_feats = torch.tensor(train_df['cluster_feats'].tolist(), dtype=torch.float32)
+            dev_feats = torch.tensor(dev_df['cluster_feats'].tolist(), dtype=torch.float32)
+            test_feats = torch.tensor(test_df['cluster_feats'].tolist(), dtype=torch.float32)
+        elif self.config['use_all_feats']:
+            train_cluster_feats = torch.tensor(train_df['cluster_feats'].tolist(), dtype=torch.float32)
+            dev__cluster_feats = torch.tensor(dev_df['cluster_feats'].tolist(), dtype=torch.float32)
+            test__cluster_feats = torch.tensor(test_df['cluster_feats'].tolist(), dtype=torch.float32)
+
+            train_role_stance_feats = torch.tensor(train_df['role_stance_feats'].tolist(), dtype=torch.float32)
+            dev_role_stance_feats = torch.tensor(dev_df['role_stance_feats'].tolist(), dtype=torch.float32)
+            test_role_stance_feats = torch.tensor(test_df['role_stance_feats'].tolist(), dtype=torch.float32)
+
+            train_feats = torch.cat((train_cluster_feats, train_role_stance_feats), dim=1)
+            dev_feats = torch.cat((dev__cluster_feats, dev_role_stance_feats), dim=1)
+            test_feats = torch.cat((test__cluster_feats, test_role_stance_feats), dim=1)
+        else:
+            train_feats = None
+            dev_feats = None
+            test_feats = None
+
         train_dataloader = torch.utils.data.DataLoader(
-            Dataset(train_df['text'].tolist(), train_df['frame_label_encoded'].tolist()),
+            Dataset(train_df['text'].tolist(), train_feats, train_df['frame_label_encoded'].tolist()),
             batch_size=self.config.get('batch_size', config["batch_size"]),
             shuffle=True
         )
         dev_dataloader = torch.utils.data.DataLoader(
-            Dataset(dev_df['text'].tolist(), dev_df['frame_label_encoded'].tolist()),
+            Dataset(dev_df['text'].tolist(), dev_feats, dev_df['frame_label_encoded'].tolist()),
             batch_size=self.config.get('batch_size', config["batch_size"]),
             shuffle=False
         )
         test_dataloader = torch.utils.data.DataLoader(
-            Dataset(test_df['text'].tolist(), test_df['frame_label_encoded'].tolist()),
+            Dataset(test_df['text'].tolist(), test_feats, test_df['frame_label_encoded'].tolist()),
             batch_size=self.config.get('batch_size', config["batch_size"]),
             shuffle=False
         )
@@ -259,6 +334,6 @@ if __name__ == "__main__":
 
     trainer = Trainer(config)
     train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader = (
-        trainer.create_dataset(config, clustering_data, processed_chains, corpus))
+        trainer.create_dataset(clustering_data, processed_chains, corpus))
     print("Training model...", flush=True)
     trainer.train(train_dataloader, dev_dataloader, test_dataloader)
