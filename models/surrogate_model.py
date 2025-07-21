@@ -167,19 +167,23 @@ class SurrogateModel:
             }
             
             # Train models for each class and compute average RMSE
+            # Use standard regression for hyperparameter optimization
             total_rmse = 0
             for class_idx in range(self.num_classes):
                 train_data = lgb.Dataset(X_train, label=y_train[:, class_idx])
                 valid_data = lgb.Dataset(X_dev, label=y_dev[:, class_idx], reference=train_data)
                 
+                # Use standard regression objective for optimization
+                opt_params = params.copy()
+                opt_params['objective'] = 'regression'
+                opt_params['metric'] = 'rmse'
+                
                 model = lgb.train(
-                    params,
+                    opt_params,
                     train_data,
                     num_boost_round=100,
                     valid_sets=[valid_data],
-                    callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)],
-                    fobj=self.cross_entropy_loss,
-                    feval=self.cross_entropy_eval
+                    callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
                 )
                 
                 y_pred = model.predict(X_dev)
@@ -235,6 +239,7 @@ class SurrogateModel:
                 **best_params
             }
             
+            # Use custom loss function for final training
             model = lgb.train(
                 params,
                 train_data,
