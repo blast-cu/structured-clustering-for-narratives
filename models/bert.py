@@ -164,7 +164,8 @@ class Trainer:
 
     def train(self, train_dataloader, val_dataloader, test_dataloader):
         loss_fn = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'], weight_decay=0.01)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'], weight_decay=0.1)
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, verbose=True)
 
         best_model = None
         best_val_f1, best_val_acc = -np.inf, -np.inf
@@ -187,6 +188,7 @@ class Trainer:
 
             print("Evaluation on validation set...", flush=True)
             f1, acc = self.evaluate(self.model, val_dataloader)
+            scheduler.step(f1)
             if early_stopper.early_stop_score(f1):
                 print("Early Stopping...", flush=True)
                 print("Best Validation Accuracy: ", best_val_acc, flush=True)
