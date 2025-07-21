@@ -206,10 +206,10 @@ class Trainer:
                 best_model = self.model
         
         print("Evaluation on training set...", flush=True)
-        train_f1, train_acc = self.evaluate(self.model, train_dataloader)
+        train_f1, train_acc = self.evaluate(best_model, train_dataloader)
 
         print("Evaluation on test set...", flush=True)
-        test_f1, test_acc = self.evaluate(self.model, test_dataloader)
+        test_f1, test_acc = self.evaluate(best_model, test_dataloader)
 
         print(f"{np.round(train_acc * 100, 2)}\t{np.round(train_f1 * 100, 2)}\t{np.round(best_val_acc * 100, 2)}\t{np.round(best_val_f1 * 100, 2)}\t{np.round(test_acc * 100, 2)}\t{np.round(test_f1 * 100, 2)}", flush=True)
 
