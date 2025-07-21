@@ -9,7 +9,7 @@ import pandas as pd
 import torch
 from pyhocon import ConfigFactory, HOCONConverter
 from sklearn.metrics import f1_score, accuracy_score
-from sklearn.preprocessing import LabelEncoder, MinMaxScaler
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from transformers import AutoModel, AutoConfig, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
@@ -191,8 +191,8 @@ class Trainer:
         df = pd.DataFrame(data)
         
         # Normalize cluster_feats and role_stance_feats to [0,1] using MinMaxScaler
-        cluster_scaler = MinMaxScaler()
-        role_stance_scaler = MinMaxScaler()
+        cluster_scaler = StandardScaler()
+        role_stance_scaler = StandardScaler()
         
         cluster_feats_normalized = cluster_scaler.fit_transform(df['cluster_feats'].tolist())
         role_stance_feats_normalized = role_stance_scaler.fit_transform(df['role_stance_feats'].tolist())
