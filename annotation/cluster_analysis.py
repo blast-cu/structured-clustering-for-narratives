@@ -386,7 +386,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
-    with open("./data/mfc/immigration/clustering/clusters_200_0.1_.pickle", 'rb') as f:
+    with open(config["cluster_eval_path"], 'rb') as f:
         clustering_data = pickle.load(f)
 
     with open(config["processed_chains_path"], "rb") as f:

@@ -1,14 +1,14 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-blast-lecs
+#SBATCH --account=blanca-curc-gpu
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=FAIL
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=10
 #SBATCH --time=7-00:00:00
-#SBATCH --qos=blanca-blast-lecs
-#SBATCH --partition=blanca-blast-lecs
-#SBATCH --gres=gpu:h100_3g.40gb:2
+#SBATCH --qos=blanca-curc-gpu
+#SBATCH --partition=blanca-curc-gpu
+#SBATCH --gres=gpu:3
 #SBATCH --mem=40G
 #SBATCH --job-name=cluster_analysis
 #SBATCH --output=logs/data.%j.log
@@ -24,10 +24,10 @@ export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 source="mfc" # mfc or partisanship
-domain="immigration" # immigration or guncontrol
+domain="guncontrol" # immigration or guncontrol
 
 echo "Starting up Ollama server"
-OLLAMA_PORT=9999
+OLLAMA_PORT=9980
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
 # OLLAMA_NUM_PARALLEL=4
 
