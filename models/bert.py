@@ -43,18 +43,35 @@ class Model(torch.nn.Module):
             
         input_dims = llm_config.hidden_size
 
+        # Feature transformation layer for non-BERT features
         if config['use_cluster_feats']:
-            input_dims += config['num_clusters']
+            self.feature_transform = torch.nn.Sequential(
+                torch.nn.Linear(config['num_clusters'], 32),
+                torch.nn.ReLU(),
+                torch.nn.Dropout(0.2),
+                torch.nn.Linear(32, 16)
+            ).to(self.device)
+            input_dims += 16
         elif config['use_all_feats']:
-            input_dims += config['num_clusters'] + config['num_char_feats']
+            feature_input_dim = config['num_clusters'] + config['num_char_feats']
+            self.feature_transform = torch.nn.Sequential(
+                torch.nn.Linear(feature_input_dim, 64),
+                torch.nn.ReLU(),
+                torch.nn.Dropout(0.2),
+                torch.nn.Linear(64, 32)
+            ).to(self.device)
+            input_dims += 32
+        else:
+            self.feature_transform = None
 
         self.dropout = torch.nn.Dropout(0.3).to(self.device)
         self.classifier = torch.nn.Linear(input_dims, config['num_classes']).to(self.device)
 
     def forward(self, inputs, feats):
         text_embs = self.get_embs(inputs)
-        if feats is not None:
-            x = torch.cat((text_embs, feats), dim=1)
+        if feats is not None and self.feature_transform is not None:
+            transformed_feats = self.feature_transform(feats)
+            x = torch.cat((text_embs, transformed_feats), dim=1)
         else:
             x = text_embs
         x = self.dropout(x)
