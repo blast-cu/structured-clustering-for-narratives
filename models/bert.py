@@ -37,9 +37,9 @@ class Model(torch.nn.Module):
 
         self.model = AutoModel.from_pretrained(model_id, config=llm_config).to(self.device)
         
-        # Freeze BERT parameters
-        for param in self.model.parameters():
-            param.requires_grad = False
+        # # Freeze BERT parameters
+        # for param in self.model.parameters():
+        #     param.requires_grad = False
             
         input_dims = llm_config.hidden_size
 
@@ -164,7 +164,7 @@ class Trainer:
 
     def train(self, train_dataloader, val_dataloader, test_dataloader):
         loss_fn = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'])
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'], weight_decay=0.01)
 
         best_model = None
         best_val_f1, best_val_acc = -np.inf, -np.inf
