@@ -384,7 +384,8 @@ if __name__ == "__main__":
     data = surrogate.prepare_features_and_targets(dataset, bert_outputs)
     
     print(f"Feature matrix shape: {data['X_train'].shape}")
-    print(f"Target probabilities shape: {data['y_train'].shape}")
+    print(f"Target probabilities shape: {data['y_train_probs'].shape}")
+    print(f"Target classes shape: {data['y_train_classes'].shape}")
     
     # Train surrogate model
     surrogate.train(data)
