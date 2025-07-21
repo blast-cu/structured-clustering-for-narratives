@@ -61,7 +61,8 @@ class Model(torch.nn.Module):
             inputs, 
             return_tensors='pt', 
             truncation=True,
-            padding=True
+            padding=True,
+            max_length=512
         ).to(self.device)
         output = self.model(**encoded_batch)
         cls_embs = output.last_hidden_state[:, 0, :]  # Extract CLS tokens for all inputs
