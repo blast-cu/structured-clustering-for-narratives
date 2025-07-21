@@ -359,7 +359,7 @@ class Trainer:
                     'probabilities': split_probabilities
                 })
 
-        with open(self.config["predictions_path"] + "bert_predictions.pickle", "wb") as f:
+        with open(self.config["frame_prediction_data_path"] + "bert_predictions.pickle", "wb") as f:
             pickle.dump({
                 'predictions': all_predictions,
                 'probabilities': all_probabilities
