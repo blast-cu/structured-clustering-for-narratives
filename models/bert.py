@@ -256,14 +256,27 @@ class Trainer:
             self.model.train()
             print("Epoch: ", epoch, flush=True)
             epoch_loss = 0
-            for inputs, labels in tqdm(train_dataloader):
-                labels = labels.to(self.device)
-                x = self.model(inputs, None)
-                loss = loss_fn(x, labels)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                scheduler.step()
+            if self.config['use_cluster_feats'] or self.config['use_all_feats']:
+                print("Using cluster features for training...", flush=True)
+                for inputs, feats, labels in tqdm(train_dataloader):
+                    feats = feats.to(self.device)
+                    labels = labels.to(self.device)
+                    x = self.model(inputs, feats)
+                    loss = loss_fn(x, labels)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    scheduler.step()
+            else:
+                print("Not using cluster features for training...", flush=True)
+                for inputs, labels in tqdm(train_dataloader):
+                    labels = labels.to(self.device)
+                    x = self.model(inputs, None)
+                    loss = loss_fn(x, labels)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    scheduler.step()
 
                 epoch_loss += loss.item()
 
