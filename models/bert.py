@@ -108,12 +108,14 @@ class Trainer:
                 doc_to_clusters[doc_id] = {
                     'chains': [],
                     'clusters': set(),
+                    'cluster_freq': [0] * config['num_clusters'],
                     'chain_to_cluster': {},
                     'text': corpus[doc_id]['text'],
                     'frame_label': corpus[doc_id]['primary_frame']
                 }
             doc_to_clusters[doc_id]['chains'].append([chain_idx])
             doc_to_clusters[doc_id]['clusters'].add(clustering_data['labels'][chain_idx])
+            doc_to_clusters[doc_id]['cluster_freq'][clustering_data['labels'][chain_idx]] += 1
             doc_to_clusters[doc_id]['chain_to_cluster'][chain_idx] = clustering_data['labels'][chain_idx]
 
         data = []
@@ -168,12 +170,12 @@ class Trainer:
         
         # Calculate total training steps for linear scheduler
         total_steps = len(train_dataloader) * self.config['epochs']
-        warmup_steps = int(0.1 * total_steps)  # 10% warmup
+        warmup_steps = int(0.1 * total_steps)
         scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
 
         best_model = None
         best_val_f1, best_val_acc = -np.inf, -np.inf
-        early_stopper = EarlyStopper(patience=5, min_delta=0.5)
+        early_stopper = EarlyStopper(patience=3, min_delta=0.3)
         for epoch in range(self.config['epochs']):
             self.model.train()
             print("Epoch: ", epoch, flush=True)
