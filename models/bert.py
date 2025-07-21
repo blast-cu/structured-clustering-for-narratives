@@ -43,34 +43,83 @@ class Model(torch.nn.Module):
             
         input_dims = llm_config.hidden_size
 
-        # Feature transformation layer for non-BERT features
+        # Feature transformation layers for non-BERT features
         if config['use_cluster_feats']:
-            self.feature_transform = torch.nn.Sequential(
+            self.cluster_transform = torch.nn.Sequential(
                 torch.nn.Linear(config['num_clusters'], 32),
                 torch.nn.ReLU(),
                 torch.nn.Dropout(0.2),
                 torch.nn.Linear(32, 16)
             ).to(self.device)
             input_dims += 16
+            self.role_transform = None
+            self.stance_transform = None
+            self.fusion_layer = None
         elif config['use_all_feats']:
-            feature_input_dim = config['num_clusters'] + config['num_char_feats']
-            self.feature_transform = torch.nn.Sequential(
-                torch.nn.Linear(feature_input_dim, 64),
+            # Separate transformation networks for each feature type
+            self.cluster_transform = torch.nn.Sequential(
+                torch.nn.Linear(config['num_clusters'], 32),
                 torch.nn.ReLU(),
                 torch.nn.Dropout(0.2),
-                torch.nn.Linear(64, 32)
+                torch.nn.Linear(32, 16)
             ).to(self.device)
-            input_dims += 32
+            
+            self.role_transform = torch.nn.Sequential(
+                torch.nn.Linear(18, 24),  # 18 role features
+                torch.nn.ReLU(),
+                torch.nn.Dropout(0.2),
+                torch.nn.Linear(24, 12)
+            ).to(self.device)
+            
+            self.stance_transform = torch.nn.Sequential(
+                torch.nn.Linear(2, 8),   # 2 stance features
+                torch.nn.ReLU(),
+                torch.nn.Dropout(0.1),
+                torch.nn.Linear(8, 4)
+            ).to(self.device)
+            
+            # Fusion layer for combining all three
+            self.fusion_layer = torch.nn.Sequential(
+                torch.nn.Linear(16 + 12 + 4, 32),  # 32 combined dims
+                torch.nn.ReLU(),
+                torch.nn.Dropout(0.2),
+                torch.nn.Linear(32, 16)            # Final 16 dims
+            ).to(self.device)
+            
+            input_dims += 16
         else:
-            self.feature_transform = None
+            self.cluster_transform = None
+            self.role_transform = None
+            self.stance_transform = None
+            self.fusion_layer = None
 
         self.dropout = torch.nn.Dropout(0.3).to(self.device)
         self.classifier = torch.nn.Linear(input_dims, config['num_classes']).to(self.device)
 
     def forward(self, inputs, feats):
         text_embs = self.get_embs(inputs)
-        if feats is not None and self.feature_transform is not None:
-            transformed_feats = self.feature_transform(feats)
+        if feats is not None:
+            if self.fusion_layer is not None:
+                # Split concatenated features back into components for use_all_feats
+                num_clusters = feats.shape[1] - 18 - 2  # Total - role - stance
+                cluster_feats = feats[:, :num_clusters]
+                role_feats = feats[:, num_clusters:num_clusters+18]
+                stance_feats = feats[:, -2:]
+                
+                # Transform each component separately
+                cluster_repr = self.cluster_transform(cluster_feats)
+                role_repr = self.role_transform(role_feats)
+                stance_repr = self.stance_transform(stance_feats)
+                
+                # Combine representations
+                combined_feats = torch.cat([cluster_repr, role_repr, stance_repr], dim=1)
+                transformed_feats = self.fusion_layer(combined_feats)
+            elif self.cluster_transform is not None:
+                # For use_cluster_feats only
+                transformed_feats = self.cluster_transform(feats)
+            else:
+                transformed_feats = feats
+                
             x = torch.cat((text_embs, transformed_feats), dim=1)
         else:
             x = text_embs
@@ -127,7 +176,7 @@ class Trainer:
     def create_dataset(self, clustering_data, processed_chains, corpus):
         print("Creating dataset...", flush=True)
 
-        immig_roles_stance = {
+        immig_roles = {
             "Immigrants:Hero": 0,
             "Immigrants:Threat": 0,
             "Immigrants:Victim": 0,
@@ -145,7 +194,10 @@ class Trainer:
             "Law Enforcement:Victim": 0,
             "Politicians:Hero": 0,
             "Politicians:Threat": 0,
-            "Politicians:Victim": 0,
+            "Politicians:Victim": 0
+        }
+
+        stance = {
             "Stance:Pro": 0,
             "Stance:Anti": 0
         }
@@ -159,7 +211,8 @@ class Trainer:
                     'chains': [],
                     'clusters': set(),
                     'cluster_freq': [0] * config['num_clusters'],
-                    'role_stance_freq': immig_roles_stance.copy(),
+                    'role_freq': immig_roles.copy(),
+                    'stance_freq': stance.copy(),
                     'chain_to_cluster': {},
                     'text': corpus[doc_id]['text'],
                     'frame_label': corpus[doc_id]['primary_frame']
@@ -172,11 +225,14 @@ class Trainer:
             chain_group_roles = processed_chains['chain_group_roles'][chain_idx]
             for char, role in chain_group_roles.items():
                 key = "{}:{}".format(char, role)
-                if key in doc_to_clusters[doc_id]['role_stance_freq']:
-                    doc_to_clusters[doc_id]['role_stance_freq'][key] += 1
+                if key in doc_to_clusters[doc_id]['role_freq']:
+                    doc_to_clusters[doc_id]['role_freq'][key] += 1
+                if key in doc_to_clusters[doc_id]['stance_freq']:
+                    doc_to_clusters[doc_id]['stance_freq'][key] += 1
 
             # generate a list using values of the role_stance_freq dictionary
-            doc_to_clusters[doc_id]['role_stance_freq_list'] = list(doc_to_clusters[doc_id]['role_stance_freq'].values())
+            doc_to_clusters[doc_id]['role_freq_list'] = list(doc_to_clusters[doc_id]['role_freq'].values())
+            doc_to_clusters[doc_id]['stance_freq_list'] = list(doc_to_clusters[doc_id]['stance_freq'].values())
 
         data = []
         for doc_id, doc in doc_to_clusters.items():
@@ -184,7 +240,8 @@ class Trainer:
                 'doc_id': doc_id,
                 'text': doc['text'],
                 'cluster_feats': doc['cluster_freq'],
-                'role_stance_feats': doc['role_stance_freq_list'],
+                'role_feats': doc['role_freq_list'],
+                'stance_feats': doc['stance_freq_list'],
                 'frame_label': doc['frame_label']
             })
         
@@ -195,10 +252,12 @@ class Trainer:
         role_stance_scaler = StandardScaler()
         
         cluster_feats_normalized = cluster_scaler.fit_transform(df['cluster_feats'].tolist())
-        role_stance_feats_normalized = role_stance_scaler.fit_transform(df['role_stance_feats'].tolist())
+        role_feats_normalized = role_stance_scaler.fit_transform(df['role_feats'].tolist())
+        stance_feats_normalized = role_stance_scaler.fit_transform(df['stance_feats'].tolist())
         
         df['cluster_feats'] = cluster_feats_normalized.tolist()
-        df['role_stance_feats'] = role_stance_feats_normalized.tolist()
+        df['role_feats'] = role_feats_normalized.tolist()
+        df['stance_feats'] = stance_feats_normalized.tolist()
         
         label_encoder = LabelEncoder()
         df['frame_label_encoded'] = label_encoder.fit_transform(df['frame_label'])
@@ -227,13 +286,17 @@ class Trainer:
             dev__cluster_feats = torch.tensor(dev_df['cluster_feats'].tolist(), dtype=torch.float32)
             test__cluster_feats = torch.tensor(test_df['cluster_feats'].tolist(), dtype=torch.float32)
 
-            train_role_stance_feats = torch.tensor(train_df['role_stance_feats'].tolist(), dtype=torch.float32)
-            dev_role_stance_feats = torch.tensor(dev_df['role_stance_feats'].tolist(), dtype=torch.float32)
-            test_role_stance_feats = torch.tensor(test_df['role_stance_feats'].tolist(), dtype=torch.float32)
+            train_role_feats = torch.tensor(train_df['role_feats'].tolist(), dtype=torch.float32)
+            dev_role_feats = torch.tensor(dev_df['role_feats'].tolist(), dtype=torch.float32)
+            test_role_feats = torch.tensor(test_df['role_feats'].tolist(), dtype=torch.float32)
 
-            train_feats = torch.cat((train_cluster_feats, train_role_stance_feats), dim=1)
-            dev_feats = torch.cat((dev__cluster_feats, dev_role_stance_feats), dim=1)
-            test_feats = torch.cat((test__cluster_feats, test_role_stance_feats), dim=1)
+            train_stance_feats = torch.tensor(train_df['stance_feats'].tolist(), dtype=torch.float32)
+            dev_stance_feats = torch.tensor(dev_df['stance_feats'].tolist(), dtype=torch.float32)
+            test_stance_feats = torch.tensor(test_df['stance_feats'].tolist(), dtype=torch.float32)
+
+            train_feats = torch.cat((train_cluster_feats, train_role_feats, train_stance_feats), dim=1)
+            dev_feats = torch.cat((dev__cluster_feats, dev_role_feats, dev_stance_feats), dim=1)
+            test_feats = torch.cat((test__cluster_feats, test_role_feats, test_stance_feats), dim=1)
         else:
             train_feats = None
             dev_feats = None
