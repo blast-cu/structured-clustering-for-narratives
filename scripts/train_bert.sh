@@ -23,4 +23,6 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
+
+python3 ./models/create_dataset.py -c "mfc_immigration"
 python3 ./models/bert.py -c "mfc_immigration"

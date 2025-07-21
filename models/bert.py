@@ -174,7 +174,7 @@ class Trainer:
         """Load pre-created dataset from disk."""
         print(f"Loading dataset from disk...", flush=True)
         
-        with open(config["frame_prediction_data_path"], "rb") as f:
+        with open(config["frame_prediction_data_path"] + "frame_prediction_data.pickle", "rb") as f:
             dataset = pickle.load(f)
         
         train_df = dataset['train_df']
@@ -370,6 +370,12 @@ class Trainer:
                     'split': split_name,
                     'probabilities': split_probabilities
                 })
+
+        with open(self.config["predictions_path"] + "bert_predictions.pickle", "wb") as f:
+            pickle.dump({
+                'predictions': all_predictions,
+                'probabilities': all_probabilities
+            }, f)
         
         return all_predictions, all_probabilities
 

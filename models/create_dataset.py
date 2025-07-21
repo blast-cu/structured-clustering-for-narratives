@@ -4,7 +4,6 @@ import random
 
 import numpy as np
 import pandas as pd
-import torch
 from pyhocon import ConfigFactory
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
@@ -165,7 +164,7 @@ if __name__ == "__main__":
     
     # Save dataset to disk
     print("Saving dataset to disk...", flush=True)
-    with open(config["frame_prediction_data_path"], "wb") as f:
+    with open(config["frame_prediction_data_path"] + "frame_prediction_data.pickle", "wb") as f:
         pickle.dump(dataset, f)
     
     print("Dataset creation complete!", flush=True)
