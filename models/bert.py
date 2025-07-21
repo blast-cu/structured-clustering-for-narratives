@@ -308,12 +308,21 @@ class Trainer:
             model.eval()
             predicted_labels = []
             true_labels = []
-            for inputs, labels in dataloader:
-                labels = labels.to(self.device)
-                x = model(inputs, None)
-                predicted = torch.argmax(x, dim=1)
-                predicted_labels.extend(predicted.cpu().numpy())
-                true_labels.extend(labels.cpu().numpy())
+            if self.config['use_cluster_feats'] or self.config['use_all_feats']:
+                for inputs, feats, labels in tqdm(train_dataloader):
+                    feats = feats.to(self.device)
+                    labels = labels.to(self.device)
+                    x = model(inputs, feats)
+                    predicted = torch.argmax(x, dim=1)
+                    predicted_labels.extend(predicted.cpu().numpy())
+                    true_labels.extend(labels.cpu().numpy())
+            else:
+                for inputs, labels in dataloader:
+                    labels = labels.to(self.device)
+                    x = model(inputs, None)
+                    predicted = torch.argmax(x, dim=1)
+                    predicted_labels.extend(predicted.cpu().numpy())
+                    true_labels.extend(labels.cpu().numpy())
 
             f1 = f1_score(true_labels, predicted_labels, average='weighted')
             acc = accuracy_score(true_labels, predicted_labels)
