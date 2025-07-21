@@ -9,6 +9,7 @@ import pandas as pd
 from pyhocon import ConfigFactory
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
+from sklearn.feature_selection import SelectKBest, f_classif
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -33,6 +34,10 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         Dictionary containing train/dev/test splits and metadata
     """
     print("Creating dataset...", flush=True)
+    
+    # Configuration for dimensionality reduction
+    max_cluster_features = config.get('max_cluster_features', 50)  # Reduce from ~200 to 50
+    print(f"Reducing cluster features to top {max_cluster_features}...", flush=True)
 
     immig_roles = {
         "Immigrants:Hero": 0,
@@ -105,11 +110,26 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
     
     df = pd.DataFrame(data)
     
-    # Normalize cluster_feats and role_stance_feats to [0,1] using StandardScaler
+    # Apply dimensionality reduction to cluster features
+    cluster_feats_array = np.array(df['cluster_feats'].tolist())
+    
+    # Method 1: Keep top K most frequent clusters across all documents
+    print("Analyzing cluster frequencies...", flush=True)
+    cluster_totals = np.sum(cluster_feats_array, axis=0)
+    top_cluster_indices = np.argsort(cluster_totals)[-max_cluster_features:][::-1]  # Top K, sorted by frequency
+    
+    print(f"Original cluster features: {cluster_feats_array.shape[1]}")
+    print(f"Reduced to top {len(top_cluster_indices)} most frequent clusters")
+    print(f"Top 10 cluster frequencies: {cluster_totals[top_cluster_indices[:10]]}")
+    
+    # Keep only top clusters
+    cluster_feats_reduced = cluster_feats_array[:, top_cluster_indices]
+    
+    # Normalize cluster_feats and role_stance_feats using StandardScaler
     cluster_scaler = StandardScaler()
     role_stance_scaler = StandardScaler()
     
-    cluster_feats_normalized = cluster_scaler.fit_transform(df['cluster_feats'].tolist())
+    cluster_feats_normalized = cluster_scaler.fit_transform(cluster_feats_reduced)
     role_feats_normalized = role_stance_scaler.fit_transform(df['role_feats'].tolist())
     stance_feats_normalized = role_stance_scaler.fit_transform(df['stance_feats'].tolist())
     
@@ -141,7 +161,10 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         'test_df': test_df,
         'label_encoder': label_encoder,
         'cluster_scaler': cluster_scaler,
-        'role_stance_scaler': role_stance_scaler
+        'role_stance_scaler': role_stance_scaler,
+        'top_cluster_indices': top_cluster_indices,  # Store for future reference
+        'original_num_clusters': cluster_feats_array.shape[1],
+        'reduced_num_clusters': len(top_cluster_indices)
     }
     
     return dataset
