@@ -94,7 +94,7 @@ class Trainer:
         torch.set_default_dtype(torch.float32)
 
     def create_dataset(self, config, clustering_data, processed_chains, corpus):
-        print("Creating dataset...")
+        print("Creating dataset...", flush=True)
 
         doc_to_clusters = {}
 
@@ -167,7 +167,7 @@ class Trainer:
         early_stopper = EarlyStopper(patience=5)
         for epoch in range(self.config['epochs']):
             self.model.train()
-            print("Epoch: ", epoch)
+            print("Epoch: ", epoch, flush=True)
             epoch_loss = 0
             for inputs, labels in tqdm(train_dataloader):
                 labels = labels.to(self.device)
@@ -179,14 +179,14 @@ class Trainer:
 
                 epoch_loss += loss.item()
 
-            print("Epoch Loss: ", epoch_loss / len(train_dataloader))
+            print("Epoch Loss: ", epoch_loss / len(train_dataloader), flush=True)
 
-            print("Evaluation on validation set...")
+            print("Evaluation on validation set...", flush=True)
             f1, acc = self.evaluate(self.model, val_dataloader)
             if early_stopper.early_stop_score(f1):
-                print("Early Stopping...")
-                print("Best Validation Accuracy: ", best_val_acc)
-                print("Best Validation F1: ", best_val_f1)
+                print("Early Stopping...", flush=True)
+                print("Best Validation Accuracy: ", best_val_acc, flush=True)
+                print("Best Validation F1: ", best_val_f1, flush=True)
                 break
             if f1 > best_val_f1:
                 best_val_f1 = f1
@@ -196,16 +196,16 @@ class Trainer:
         # Load best model for evaluation
         self.model.load_state_dict(best_model)
         
-        print("Evaluation on training set...")
+        print("Evaluation on training set...", flush=True)
         train_f1, train_acc = self.evaluate(self.model, train_dataloader)
 
-        print("Evaluation on test set...")
+        print("Evaluation on test set...", flush=True)
         test_f1, test_acc = self.evaluate(self.model, test_dataloader)
 
-        print(f"{train_acc},{train_f1},{best_val_acc},{best_val_f1},{test_acc},{test_f1}")
+        print(f"{train_acc},{train_f1},{best_val_acc},{best_val_f1},{test_acc},{test_f1}", flush=True)
 
     def evaluate(self, model, dataloader):
-        print("Evaluating...")
+        print("Evaluating...", flush=True)
         with torch.no_grad():
             model.eval()
             predicted_labels = []
@@ -246,5 +246,5 @@ if __name__ == "__main__":
     trainer = Trainer(config)
     train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader = (
         trainer.create_dataset(config, clustering_data, processed_chains, corpus))
-    print("Training model...")
+    print("Training model...", flush=True)
     trainer.train(train_dataloader, dev_dataloader, test_dataloader)

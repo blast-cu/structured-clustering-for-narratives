@@ -24,7 +24,7 @@ export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 source="mfc" # mfc or partisanship
-domain="guncontrol" # immigration or guncontrol
+domain="immigration" # immigration or guncontrol
 
 echo "Starting up Ollama server"
 OLLAMA_PORT=9999

@@ -32,7 +32,7 @@ export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 # python3 ./clustering/finetuned_pckmeans.py -c "mfc_immigration" -k $1 -w $2
 
-python3 ./clustering/weighted_pckmeans.py -c "mfc_guncontrol" -k 50 -w 0.1 --skip_init
+python3 ./clustering/weighted_pckmeans.py -c "mfc_immigration" -k 500 -w 0.1 --skip_init
 
 # python3 ./clustering/finetuned_pckmeans.py -c "mfc_immigration" -k 250 -w 0.5
 
