@@ -16,7 +16,7 @@ class SurrogateModel:
     
     def __init__(self, config):
         self.config = config
-        self.models = []  # One model per class probability
+        self.model = None  # Single multi-class model
         self.num_classes = config['num_classes']
         self.feature_names = None
         
@@ -152,18 +152,15 @@ class SurrogateModel:
             'splits': full_df[['split']].reset_index(drop=True)
         }
     
-    def optimize_hyperparameters(self, X_train, y_train_probs, X_dev, y_dev_probs):
-        """Use Optuna to find optimal hyperparameters for probability prediction."""
+    def optimize_hyperparameters(self, X_train, y_train_classes, X_dev, y_dev_classes):
+        """Use Optuna to find optimal hyperparameters for multi-class model."""
         print("Optimizing hyperparameters with Optuna...", flush=True)
         
-        y_train = y_train_probs
-        y_dev = y_dev_probs
-        
         def objective(trial):
-            # Train separate models for each class probability
             params = {
-                'objective': 'regression',
-                'metric': 'rmse',
+                'objective': 'multiclass',
+                'num_class': self.num_classes,
+                'metric': 'multi_logloss',
                 'device': self.device_type,
                 'boosting_type': 'gbdt',
                 'num_leaves': trial.suggest_int('num_leaves', 10, 200),
@@ -178,23 +175,20 @@ class SurrogateModel:
                 'seed': self.config.get('seed', 42)
             }
             
-            # Train models for each class probability and compute average validation score
-            total_rmse = 0
-            for class_idx in range(self.num_classes):
-                train_data = lgb.Dataset(X_train, label=y_train[:, class_idx], feature_name=self.feature_names)
-                valid_data = lgb.Dataset(X_dev, label=y_dev[:, class_idx], reference=train_data, feature_name=self.feature_names)
-                
-                model = lgb.train(
-                    params,
-                    train_data,
-                    num_boost_round=100,
-                    valid_sets=[valid_data],
-                    callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
-                )
-                
-                total_rmse += model.best_score['valid_0']['rmse']
+            # Train single multi-class model
+            train_data = lgb.Dataset(X_train, label=y_train_classes, feature_name=self.feature_names)
+            valid_data = lgb.Dataset(X_dev, label=y_dev_classes, reference=train_data, feature_name=self.feature_names)
             
-            return total_rmse / self.num_classes
+            model = lgb.train(
+                params,
+                train_data,
+                num_boost_round=100,
+                valid_sets=[valid_data],
+                callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
+            )
+            
+            # Return validation loss (lower is better)
+            return model.best_score['valid_0']['multi_logloss']
         
         study = optuna.create_study(direction='minimize')
         study.optimize(objective, n_trials=100)  # Increased trials for better optimization
@@ -203,78 +197,63 @@ class SurrogateModel:
         return study.best_params
     
     def train(self, data):
-        """Train models to predict probability distributions."""
-        print("Training surrogate models...", flush=True)
+        """Train single multi-class LightGBM model."""
+        print("Training surrogate model...", flush=True)
         
         X_train = data['X_train']
-        y_train_probs = data['y_train_probs']  # Use probability distributions
+        y_train_classes = data['y_train_classes']  # Use BERT class predictions
         X_dev = data['X_dev']
-        y_dev_probs = data['y_dev_probs']
+        y_dev_classes = data['y_dev_classes']
         
         # Optimize hyperparameters
-        best_params = self.optimize_hyperparameters(X_train, y_train_probs, X_dev, y_dev_probs)
+        best_params = self.optimize_hyperparameters(X_train, y_train_classes, X_dev, y_dev_classes)
         
-        print("Training final probability prediction models...", flush=True)
+        print("Training final multi-class model...", flush=True)
         
-        # Train one regression model per class probability
-        self.models = []
-        for class_idx in range(self.num_classes):
-            print(f"Training model for class {class_idx} probability...", flush=True)
-            
-            train_data = lgb.Dataset(
-                X_train, 
-                label=y_train_probs[:, class_idx],
-                feature_name=self.feature_names
-            )
-            valid_data = lgb.Dataset(
-                X_dev, 
-                label=y_dev_probs[:, class_idx], 
-                reference=train_data,
-                feature_name=self.feature_names
-            )
-            
-            params = {
-                'objective': 'regression',
-                'metric': 'rmse',
-                'device': self.device_type,
-                'boosting_type': 'gbdt',
-                'verbosity': -1,
-                'seed': self.config.get('seed', 42),
-                **best_params
-            }
-            
-            model = lgb.train(
-                params,
-                train_data,
-                num_boost_round=1000,
-                valid_sets=[valid_data],
-                callbacks=[
-                    lgb.early_stopping(50),
-                    lgb.log_evaluation(100)
-                ]
-            )
-            
-            self.models.append(model)
+        # Prepare data
+        train_data = lgb.Dataset(
+            X_train, 
+            label=y_train_classes,
+            feature_name=self.feature_names
+        )
+        valid_data = lgb.Dataset(
+            X_dev, 
+            label=y_dev_classes, 
+            reference=train_data,
+            feature_name=self.feature_names
+        )
+        
+        # Train model with best parameters
+        params = {
+            'objective': 'multiclass',
+            'num_class': self.num_classes,
+            'metric': 'multi_logloss',
+            'device': self.device_type,
+            'boosting_type': 'gbdt',
+            'verbosity': -1,
+            'seed': self.config.get('seed', 42),
+            **best_params
+        }
+        
+        self.model = lgb.train(
+            params,
+            train_data,
+            num_boost_round=1000,
+            valid_sets=[valid_data],
+            callbacks=[
+                lgb.early_stopping(50),
+                lgb.log_evaluation(100)
+            ]
+        )
     
     def predict_probabilities(self, X):
         """Predict probability distributions."""
-        if not self.models:
-            raise ValueError("Models not trained yet")
+        if self.model is None:
+            raise ValueError("Model not trained yet")
         
-        # Get predictions from each class-specific model
-        predictions = []
-        for model in self.models:
-            pred = model.predict(X)
-            predictions.append(pred)
-        
-        # Stack and normalize to ensure probabilities sum to 1
-        prob_matrix = np.column_stack(predictions)
-        
-        # Apply softmax normalization
-        exp_probs = np.exp(prob_matrix - np.max(prob_matrix, axis=1, keepdims=True))
-        normalized_probs = exp_probs / np.sum(exp_probs, axis=1, keepdims=True)
-        
-        return normalized_probs
+        # LightGBM multi-class returns probabilities directly
+        probabilities = self.model.predict(X)
+        return probabilities
     
     def predict_classes(self, X):
         """Predict class labels."""
@@ -321,30 +300,25 @@ class SurrogateModel:
         return results
     
     def feature_importance(self):
-        """Get feature importance from trained models."""
-        if not self.models:
-            raise ValueError("Models not trained yet")
+        """Get feature importance from trained model."""
+        if self.model is None:
+            raise ValueError("Model not trained yet")
         
-        # Average importance across all class models
-        importances = []
-        for model in self.models:
-            importance = model.feature_importance(importance_type='gain')
-            importances.append(importance)
-        
-        avg_importance = np.mean(importances, axis=0)
+        # Get feature importance from single multi-class model
+        importance = self.model.feature_importance(importance_type='gain')
         
         # Create DataFrame for easy viewing
         importance_df = pd.DataFrame({
             'feature': self.feature_names,
-            'importance': avg_importance
+            'importance': importance
         }).sort_values('importance', ascending=False)
         
         return importance_df
     
     def save(self, path):
-        """Save trained models."""
+        """Save trained model."""
         save_data = {
-            'models': self.models,
+            'model': self.model,
             'num_classes': self.num_classes,
             'feature_names': self.feature_names,
             'config': self.config
@@ -356,11 +330,11 @@ class SurrogateModel:
         print(f"Surrogate model saved to {path}")
     
     def load(self, path):
-        """Load trained models."""
+        """Load trained model."""
         with open(path, 'rb') as f:
             save_data = pickle.load(f)
         
-        self.models = save_data['models']
+        self.model = save_data['model']
         self.num_classes = save_data['num_classes']
         self.feature_names = save_data['feature_names']
         
