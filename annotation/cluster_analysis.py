@@ -199,6 +199,56 @@ class ClusterAnalyzer:
         self.save_progress(analyzed_clusters)
         print(f"Processing complete. Final save completed.", flush=True)
 
+    def sample_from_different_documents(self, chains, sample_size):
+        """Sample chains prioritizing different documents.
+        
+        Args:
+            chains: List of chain entries with 'doc_id' field
+            sample_size: Number of chains to sample
+            
+        Returns:
+            List of sampled chains, prioritizing document diversity
+        """
+        if len(chains) <= sample_size:
+            return chains
+        
+        # Group chains by document ID
+        doc_groups = {}
+        for chain in chains:
+            doc_id = chain['doc_id']
+            if doc_id not in doc_groups:
+                doc_groups[doc_id] = []
+            doc_groups[doc_id].append(chain)
+        
+        sampled_chains = []
+        remaining_sample_size = sample_size
+        
+        # First pass: sample one chain from each document
+        doc_ids = list(doc_groups.keys())
+        random.shuffle(doc_ids)  # Randomize document order
+        
+        for doc_id in doc_ids:
+            if remaining_sample_size <= 0:
+                break
+            # Randomly select one chain from this document
+            selected_chain = random.choice(doc_groups[doc_id])
+            sampled_chains.append(selected_chain)
+            remaining_sample_size -= 1
+        
+        # Second pass: if we still need more samples, randomly sample from remaining chains
+        if remaining_sample_size > 0:
+            # Get all chains not yet sampled
+            sampled_chain_ids = {id(chain) for chain in sampled_chains}
+            remaining_chains = [chain for chain in chains if id(chain) not in sampled_chain_ids]
+            
+            if remaining_chains:
+                additional_samples = random.sample(
+                    remaining_chains, 
+                    min(remaining_sample_size, len(remaining_chains))
+                )
+                sampled_chains.extend(additional_samples)
+        
+        return sampled_chains
 
     def process_cluster(self, cluster):
         if self.domain == 'guncontrol':
@@ -207,7 +257,7 @@ class ClusterAnalyzer:
             domain = "Immigration"
         
         items_to_sample = min(self.chains_per_cluster, len(cluster['chains']))
-        sampled_items = random.sample(cluster['chains'], items_to_sample)
+        sampled_items = self.sample_from_different_documents(cluster['chains'], items_to_sample)
 
         sentences = ""
         idx = 1
