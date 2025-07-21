@@ -68,7 +68,7 @@ class SurrogateModel:
         print("Loading dataset and BERT predictions...", flush=True)
         
         # Load dataset with features
-        dataset_path = self.config["frame_prediction_data_path"] + "frame_prediction_data.pkl"
+        dataset_path = self.config["frame_prediction_data_path"] + "frame_prediction_data.pickle"
         with open(dataset_path, "rb") as f:
             dataset = pickle.load(f)
         
