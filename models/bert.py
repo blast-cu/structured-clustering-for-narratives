@@ -11,7 +11,7 @@ from pyhocon import ConfigFactory
 from sklearn.metrics import f1_score, accuracy_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
-from transformers import AutoModel, AutoConfig, AutoTokenizer
+from transformers import AutoModel, AutoConfig, AutoTokenizer, get_linear_schedule_with_warmup
 from tqdm import tqdm
 
 from utils.early_stopper import EarlyStopper
@@ -165,7 +165,11 @@ class Trainer:
     def train(self, train_dataloader, val_dataloader, test_dataloader):
         loss_fn = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'], weight_decay=0.1)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3, verbose=True)
+        
+        # Calculate total training steps for linear scheduler
+        total_steps = len(train_dataloader) * self.config['epochs']
+        warmup_steps = int(0.1 * total_steps)  # 10% warmup
+        scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
 
         best_model = None
         best_val_f1, best_val_acc = -np.inf, -np.inf
@@ -181,6 +185,7 @@ class Trainer:
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                scheduler.step()
 
                 epoch_loss += loss.item()
 
@@ -188,7 +193,6 @@ class Trainer:
 
             print("Evaluation on validation set...", flush=True)
             f1, acc = self.evaluate(self.model, val_dataloader)
-            scheduler.step(f1)
             if early_stopper.early_stop_score(f1):
                 print("Early Stopping...", flush=True)
                 print("Best Validation Accuracy: ", best_val_acc, flush=True)
