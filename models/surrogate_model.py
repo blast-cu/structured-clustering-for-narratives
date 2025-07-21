@@ -16,7 +16,7 @@ class SurrogateModel:
     
     def __init__(self, config):
         self.config = config
-        self.models = []  # One model per class for probability prediction
+        self.models = []  # One model per class probability
         self.num_classes = config['num_classes']
         self.feature_names = None
         
@@ -83,6 +83,7 @@ class SurrogateModel:
         # Combine all splits
         all_dfs = []
         all_probabilities = []
+        all_predictions = []
         
         splits = ['train', 'dev', 'test']
         for split in splits:
@@ -90,10 +91,15 @@ class SurrogateModel:
             df['split'] = split
             all_dfs.append(df)
             
-            # Find corresponding probabilities
+            # Find corresponding probabilities and predictions
             for prob_data in bert_outputs['probabilities']:
                 if prob_data['split'] == split:
                     all_probabilities.extend(prob_data['probabilities'])
+                    break
+            
+            for pred_data in bert_outputs['predictions']:
+                if pred_data['split'] == split:
+                    all_predictions.extend(pred_data['predictions'])
                     break
         
         # Combine into single dataframe
@@ -124,6 +130,7 @@ class SurrogateModel:
         # Combine all features
         X = np.hstack(features)
         y_probs = np.array(all_probabilities)
+        y_classes = np.array(all_predictions)  # Use BERT predictions as class labels
         
         self.feature_names = feature_names
         
@@ -136,19 +143,27 @@ class SurrogateModel:
             'X_train': X[train_mask],
             'X_dev': X[dev_mask], 
             'X_test': X[test_mask],
-            'y_train': y_probs[train_mask],
-            'y_dev': y_probs[dev_mask],
-            'y_test': y_probs[test_mask],
+            'y_train_probs': y_probs[train_mask],
+            'y_dev_probs': y_probs[dev_mask],
+            'y_test_probs': y_probs[test_mask],
+            'y_train_classes': y_classes[train_mask],
+            'y_dev_classes': y_classes[dev_mask],
+            'y_test_classes': y_classes[test_mask],
             'splits': full_df[['split']].reset_index(drop=True)
         }
     
-    def optimize_hyperparameters(self, X_train, y_train, X_dev, y_dev):
-        """Use Optuna to find optimal hyperparameters."""
+    def optimize_hyperparameters(self, X_train, y_train_probs, X_dev, y_dev_probs):
+        """Use Optuna to find optimal hyperparameters for probability prediction."""
         print("Optimizing hyperparameters with Optuna...", flush=True)
         
+        y_train = y_train_probs
+        y_dev = y_dev_probs
+        
         def objective(trial):
+            # Train separate models for each class probability
             params = {
-                'objective': 'None',  # Use custom objective
+                'objective': 'regression',
+                'metric': 'rmse',
                 'device': self.device_type,
                 'boosting_type': 'gbdt',
                 'num_leaves': trial.suggest_int('num_leaves', 10, 200),
@@ -163,106 +178,81 @@ class SurrogateModel:
                 'seed': self.config.get('seed', 42)
             }
             
-            # Train models for each class and compute average RMSE
-            # Use standard regression for hyperparameter optimization
+            # Train models for each class probability and compute average validation score
             total_rmse = 0
             for class_idx in range(self.num_classes):
-                train_data = lgb.Dataset(X_train, label=y_train[:, class_idx])
-                valid_data = lgb.Dataset(X_dev, label=y_dev[:, class_idx], reference=train_data)
-                
-                # Use standard regression objective for optimization
-                opt_params = params.copy()
-                opt_params['objective'] = 'regression'
-                opt_params['metric'] = 'rmse'
+                train_data = lgb.Dataset(X_train, label=y_train[:, class_idx], feature_name=self.feature_names)
+                valid_data = lgb.Dataset(X_dev, label=y_dev[:, class_idx], reference=train_data, feature_name=self.feature_names)
                 
                 model = lgb.train(
-                    opt_params,
+                    params,
                     train_data,
                     num_boost_round=100,
                     valid_sets=[valid_data],
                     callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
                 )
                 
-                y_pred = model.predict(X_dev)
-                rmse = np.sqrt(mean_squared_error(y_dev[:, class_idx], y_pred))
-                total_rmse += rmse
+                total_rmse += model.best_score['valid_0']['rmse']
             
             return total_rmse / self.num_classes
         
         study = optuna.create_study(direction='minimize')
-        study.optimize(objective, n_trials=50)
+        study.optimize(objective, n_trials=100)  # Increased trials for better optimization
         
         print(f"Best hyperparameters: {study.best_params}", flush=True)
         return study.best_params
     
     def train(self, data):
-        """Train LightGBM models - one for each class probability."""
+        """Train models to predict probability distributions."""
         print("Training surrogate models...", flush=True)
         
         X_train = data['X_train']
-        y_train = data['y_train']
+        y_train_probs = data['y_train_probs']  # Use probability distributions
         X_dev = data['X_dev']
-        y_dev = data['y_dev']
+        y_dev_probs = data['y_dev_probs']
         
         # Optimize hyperparameters
-        best_params = self.optimize_hyperparameters(X_train, y_train, X_dev, y_dev)
+        best_params = self.optimize_hyperparameters(X_train, y_train_probs, X_dev, y_dev_probs)
         
-        # Train one model per class
+        print("Training final probability prediction models...", flush=True)
+        
+        # Train one regression model per class probability
         self.models = []
         for class_idx in range(self.num_classes):
-            print(f"Training model for class {class_idx}...", flush=True)
+            print(f"Training model for class {class_idx} probability...", flush=True)
             
-            # Prepare data for this class
             train_data = lgb.Dataset(
                 X_train, 
-                label=y_train[:, class_idx],
+                label=y_train_probs[:, class_idx],
                 feature_name=self.feature_names
             )
             valid_data = lgb.Dataset(
                 X_dev, 
-                label=y_dev[:, class_idx], 
+                label=y_dev_probs[:, class_idx], 
                 reference=train_data,
                 feature_name=self.feature_names
             )
             
-            # Train model with best parameters using custom loss
             params = {
-                'boosting_type': 'gbdt',
+                'objective': 'regression',
+                'metric': 'rmse',
                 'device': self.device_type,
+                'boosting_type': 'gbdt',
                 'verbosity': -1,
                 'seed': self.config.get('seed', 42),
                 **best_params
             }
             
-            # Use custom cross-entropy loss function for final training
-            try:
-                model = lgb.train(
-                    params,
-                    train_data,
-                    num_boost_round=1000,
-                    valid_sets=[valid_data],
-                    callbacks=[
-                        lgb.early_stopping(50),
-                        lgb.log_evaluation(100)
-                    ],
-                    fobj=self.cross_entropy_loss,
-                    feval=self.cross_entropy_eval
-                )
-            except TypeError:
-                # Fallback to standard regression if fobj not supported
-                print("Custom loss not supported, using standard regression", flush=True)
-                params['objective'] = 'regression'
-                params['metric'] = 'rmse'
-                model = lgb.train(
-                    params,
-                    train_data,
-                    num_boost_round=1000,
-                    valid_sets=[valid_data],
-                    callbacks=[
-                        lgb.early_stopping(50),
-                        lgb.log_evaluation(100)
-                    ]
-                )
+            model = lgb.train(
+                params,
+                train_data,
+                num_boost_round=1000,
+                valid_sets=[valid_data],
+                callbacks=[
+                    lgb.early_stopping(50),
+                    lgb.log_evaluation(100)
+                ]
+            )
             
             self.models.append(model)
     
@@ -271,6 +261,7 @@ class SurrogateModel:
         if not self.models:
             raise ValueError("Models not trained yet")
         
+        # Get predictions from each class-specific model
         predictions = []
         for model in self.models:
             pred = model.predict(X)
@@ -298,14 +289,14 @@ class SurrogateModel:
         
         for split in ['train', 'dev', 'test']:
             X = data[f'X_{split}']
-            y_true_probs = data[f'y_{split}']
-            y_true_classes = np.argmax(y_true_probs, axis=1)
+            y_true_probs = data[f'y_{split}_probs']  # BERT probabilities
+            y_true_classes = data[f'y_{split}_classes']  # BERT predictions
             
             # Predict with surrogate model
             y_pred_probs = self.predict_probabilities(X)
             y_pred_classes = self.predict_classes(X)
             
-            # Classification metrics
+            # Classification metrics (comparing predicted vs BERT classes)
             acc = accuracy_score(y_true_classes, y_pred_classes)
             f1 = f1_score(y_true_classes, y_pred_classes, average='weighted')
             
