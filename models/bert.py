@@ -36,9 +36,14 @@ class Model(torch.nn.Module):
         llm_config = AutoConfig.from_pretrained(model_id)
 
         self.model = AutoModel.from_pretrained(model_id, config=llm_config).to(self.device)
+        
+        # Freeze BERT parameters
+        for param in self.model.parameters():
+            param.requires_grad = False
+            
         input_dims = llm_config.hidden_size
 
-        self.dropout = torch.nn.Dropout(0.1).to(self.device)
+        self.dropout = torch.nn.Dropout(0.3).to(self.device)
         self.classifier = torch.nn.Linear(input_dims, config['num_classes']).to(self.device)
 
     def forward(self, inputs, feats):
@@ -198,7 +203,7 @@ class Trainer:
         print("Evaluation on test set...", flush=True)
         test_f1, test_acc = self.evaluate(self.model, test_dataloader)
 
-        print(f"{train_acc},{train_f1},{best_val_acc},{best_val_f1},{test_acc},{test_f1}", flush=True)
+        print(f"{np.round(train_acc * 100, 2)},{np.round(train_f1 * 100, 2)},{np.round(best_val_acc * 100, 2)},{np.round(best_val_f1 * 100, 2)},{np.round(test_acc * 100, 2)},{np.round(test_f1 * 100, 2)}", flush=True)
 
     def evaluate(self, model, dataloader):
         print("Evaluating...", flush=True)
@@ -216,8 +221,8 @@ class Trainer:
             f1 = f1_score(true_labels, predicted_labels, average='weighted')
             acc = accuracy_score(true_labels, predicted_labels)
 
-            print("Accuracy: " + str(np.round(acc, 3)), flush=True)
-            print("F1 Score: " + str(np.round(f1, 3)), flush=True)
+            print("Accuracy: " + str(np.round(acc * 100, 2)), flush=True)
+            print("F1 Score: " + str(np.round(f1 * 100, 2)), flush=True)
 
         return np.round(f1, 3), np.round(acc, 3)
 
