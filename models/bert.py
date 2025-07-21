@@ -29,7 +29,6 @@ sys.modules['schemas'] = schemas
 class Model(torch.nn.Module):
     def __init__(self, config, device):
         super(Model, self).__init__()
-        torch.set_default_dtype(torch.float64)
         self.device = device
         model_id = config['pretrained_model']
         self.tokenizer = AutoTokenizer.from_pretrained(model_id)
@@ -191,10 +190,7 @@ class Trainer:
             if f1 > best_val_f1:
                 best_val_f1 = f1
                 best_val_acc = acc
-                best_model = self.model.state_dict().copy()
-
-        # Load best model for evaluation
-        self.model.load_state_dict(best_model)
+                best_model = self.model
         
         print("Evaluation on training set...", flush=True)
         train_f1, train_acc = self.evaluate(self.model, train_dataloader)
