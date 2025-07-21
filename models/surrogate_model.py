@@ -8,6 +8,8 @@ import pandas as pd
 import lightgbm as lgb
 from pyhocon import ConfigFactory
 from sklearn.metrics import f1_score, accuracy_score, mean_squared_error, r2_score
+from sklearn.feature_selection import f_classif
+from sklearn.linear_model import LogisticRegression
 import optuna
 
 
@@ -360,6 +362,42 @@ if __name__ == "__main__":
     print(f"Feature matrix shape: {data['X_train'].shape}")
     print(f"Target probabilities shape: {data['y_train_probs'].shape}")
     print(f"Target classes shape: {data['y_train_classes'].shape}")
+    
+    # Add diagnostics
+    print("\n=== FEATURE DIAGNOSTICS ===")
+    X_train = data['X_train']
+    y_train = data['y_train_classes']
+    
+    print(f"Feature statistics:")
+    print(f"  - Mean: {np.mean(X_train, axis=0)[:10]}...")  # First 10 features
+    print(f"  - Std: {np.std(X_train, axis=0)[:10]}...") 
+    print(f"  - Non-zero ratio: {np.mean(X_train != 0, axis=0)[:10]}...")  # Sparsity check
+    
+    print(f"\nClass distribution:")
+    unique, counts = np.unique(y_train, return_counts=True)
+    for i, (cls, count) in enumerate(zip(unique, counts)):
+        print(f"  Class {cls}: {count} samples ({count/len(y_train)*100:.1f}%)")
+        if i >= 5:  # Show first 6 classes
+            print(f"  ... and {len(unique)-6} more classes")
+            break
+    
+    # Check if features correlate with targets at all
+    from sklearn.feature_selection import f_classif
+    f_scores, p_values = f_classif(X_train, y_train)
+    significant_features = np.sum(p_values < 0.05)
+    print(f"\nFeature-target correlation:")
+    print(f"  - Features with p<0.05: {significant_features}/{len(p_values)}")
+    print(f"  - Top 5 F-scores: {np.sort(f_scores)[-5:][::-1]}")
+    
+    # Simple baseline check
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import f1_score
+    baseline_lr = LogisticRegression(max_iter=1000, random_state=42)
+    baseline_lr.fit(X_train, y_train)
+    baseline_pred = baseline_lr.predict(data['X_dev'])
+    baseline_f1 = f1_score(data['y_dev_classes'], baseline_pred, average='weighted')
+    print(f"\nBaseline Logistic Regression F1: {baseline_f1:.4f}")
+    print("==============================\n")
     
     # Train surrogate model
     surrogate.train(data)
