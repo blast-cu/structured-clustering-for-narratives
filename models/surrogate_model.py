@@ -47,9 +47,6 @@ class SurrogateModel:
         # Clip predictions to prevent log(0)
         y_pred_clipped = np.clip(y_pred, 1e-15, 1 - 1e-15)
         
-        # Cross-entropy loss: -y_true * log(y_pred)
-        loss = -y_true * np.log(y_pred_clipped)
-        
         # Return gradient and hessian for LightGBM
         grad = -(y_true / y_pred_clipped)
         hess = y_true / (y_pred_clipped ** 2)
@@ -228,30 +225,44 @@ class SurrogateModel:
                 feature_name=self.feature_names
             )
             
-            # Train model with best parameters
+            # Train model with best parameters using custom loss
             params = {
-                'objective': 'regression',
-                'device': self.device_type,
-                'metric': 'rmse',
                 'boosting_type': 'gbdt',
+                'device': self.device_type,
                 'verbosity': -1,
                 'seed': self.config.get('seed', 42),
                 **best_params
             }
             
-            # Use custom loss function for final training
-            model = lgb.train(
-                params,
-                train_data,
-                num_boost_round=1000,
-                valid_sets=[valid_data],
-                callbacks=[
-                    lgb.early_stopping(50),
-                    lgb.log_evaluation(100)
-                ],
-                fobj=self.cross_entropy_loss,
-                feval=self.cross_entropy_eval
-            )
+            # Use custom cross-entropy loss function for final training
+            try:
+                model = lgb.train(
+                    params,
+                    train_data,
+                    num_boost_round=1000,
+                    valid_sets=[valid_data],
+                    callbacks=[
+                        lgb.early_stopping(50),
+                        lgb.log_evaluation(100)
+                    ],
+                    fobj=self.cross_entropy_loss,
+                    feval=self.cross_entropy_eval
+                )
+            except TypeError:
+                # Fallback to standard regression if fobj not supported
+                print("Custom loss not supported, using standard regression", flush=True)
+                params['objective'] = 'regression'
+                params['metric'] = 'rmse'
+                model = lgb.train(
+                    params,
+                    train_data,
+                    num_boost_round=1000,
+                    valid_sets=[valid_data],
+                    callbacks=[
+                        lgb.early_stopping(50),
+                        lgb.log_evaluation(100)
+                    ]
+                )
             
             self.models.append(model)
     
