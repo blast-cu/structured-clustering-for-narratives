@@ -164,7 +164,7 @@ class Trainer:
 
     def train(self, train_dataloader, val_dataloader, test_dataloader):
         loss_fn = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'], weight_decay=0.1)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.config['lr'], weight_decay=0.15)
         
         # Calculate total training steps for linear scheduler
         total_steps = len(train_dataloader) * self.config['epochs']
