@@ -203,7 +203,7 @@ class Trainer:
         print("Evaluation on test set...", flush=True)
         test_f1, test_acc = self.evaluate(self.model, test_dataloader)
 
-        print(f"{np.round(train_acc * 100, 2)},{np.round(train_f1 * 100, 2)},{np.round(best_val_acc * 100, 2)},{np.round(best_val_f1 * 100, 2)},{np.round(test_acc * 100, 2)},{np.round(test_f1 * 100, 2)}", flush=True)
+        print(f"{np.round(train_acc * 100, 2)}\t{np.round(train_f1 * 100, 2)}\t{np.round(best_val_acc * 100, 2)}\t{np.round(best_val_f1 * 100, 2)}\t{np.round(test_acc * 100, 2)}\t{np.round(test_f1 * 100, 2)}", flush=True)
 
     def evaluate(self, model, dataloader):
         print("Evaluating...", flush=True)
