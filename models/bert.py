@@ -7,12 +7,12 @@ import sys
 import numpy as np
 import pandas as pd
 import torch
-from datasets import tqdm
 from pyhocon import ConfigFactory
 from sklearn.metrics import f1_score, accuracy_score
-from transformers import AutoModel, AutoConfig, AutoTokenizer
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+from transformers import AutoModel, AutoConfig, AutoTokenizer
+from tqdm import tqdm
 
 from utils.early_stopper import EarlyStopper
 
@@ -233,6 +233,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
+
+    print("Loading data from disk...", flush=True)
 
     with open(config["cluster_eval_path"], "rb") as f:
         clustering_data = pickle.load(f)
