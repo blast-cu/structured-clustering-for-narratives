@@ -41,44 +41,59 @@ def create_structural_cluster_features(clusters, chain_strengths, total_clusters
     unique_clusters = len(cluster_counts)
     total_chains = len(clusters)
     
-    # 1. Dominant cluster ID (most frequent cluster)
-    dominant_cluster = cluster_counts.most_common(1)[0][0]
+    # 1. Dominant cluster ID (normalized to [0,1] to avoid large values)
+    dominant_cluster = cluster_counts.most_common(1)[0][0] / max(total_clusters, 1)
     
-    # 2. Cluster diversity (Shannon entropy)
-    if total_chains == 1:
-        cluster_diversity = 0
+    # 2. Cluster diversity (Shannon entropy) - safe calculation
+    if total_chains <= 1 or unique_clusters <= 1:
+        cluster_diversity = 0.0
     else:
         probs = np.array(list(cluster_counts.values())) / total_chains
-        cluster_diversity = -np.sum(probs * np.log2(probs + 1e-10))  # Add small epsilon
+        # Safe entropy calculation
+        cluster_diversity = -np.sum(probs * np.log2(np.maximum(probs, 1e-10)))
+        # Normalize by max possible entropy
+        max_entropy = np.log2(unique_clusters)
+        cluster_diversity = cluster_diversity / max(max_entropy, 1e-10)
     
-    # 3. Narrative strength (average chain strength)
-    narrative_strength = np.mean(chain_strengths) if chain_strengths else 0
+    # 3. Narrative strength (average chain strength) - safe calculation
+    narrative_strength = np.mean(chain_strengths) if chain_strengths else 0.0
+    narrative_strength = float(narrative_strength)  # Ensure it's a float
     
     # 4. Narrative coverage (ratio of unique clusters to total chains)
-    narrative_coverage = unique_clusters / total_chains
+    narrative_coverage = unique_clusters / max(total_chains, 1)
     
     # 5. Cluster concentration (max cluster frequency / total chains)
-    cluster_concentration = max(cluster_counts.values()) / total_chains
+    cluster_concentration = max(cluster_counts.values()) / max(total_chains, 1)
     
     # 6. Max cluster strength (strength of strongest narrative)
-    max_cluster_strength = max(chain_strengths) if chain_strengths else 0
+    max_cluster_strength = float(max(chain_strengths)) if chain_strengths else 0.0
     
-    # 7. Average cluster strength (same as narrative_strength for consistency)
-    avg_cluster_strength = narrative_strength
+    # 7. Ratio of unique clusters to possible clusters
+    cluster_coverage_ratio = unique_clusters / max(total_clusters, 1)
     
-    # 8. Cluster entropy (normalized)
-    cluster_entropy = cluster_diversity / np.log2(min(unique_clusters, 2))  # Normalize by max possible entropy
+    # 8. Coefficient of variation of chain strengths
+    if len(chain_strengths) <= 1 or narrative_strength == 0:
+        strength_variation = 0.0
+    else:
+        strength_std = float(np.std(chain_strengths))
+        strength_variation = strength_std / max(narrative_strength, 1e-10)
     
-    return [
+    # Ensure all values are finite
+    features = [
         dominant_cluster,
         cluster_diversity, 
         narrative_strength,
         narrative_coverage,
         cluster_concentration,
         max_cluster_strength,
-        avg_cluster_strength,
-        cluster_entropy
+        cluster_coverage_ratio,
+        strength_variation
     ]
+    
+    # Safety check: replace any inf/nan with 0
+    features = [0.0 if not np.isfinite(f) else float(f) for f in features]
+    
+    return features
 
 
 def create_dataset(config, clustering_data, processed_chains, corpus):
@@ -187,6 +202,11 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
     cluster_feats_array = np.array(df['cluster_feats'].tolist())
     print(f"Structural cluster features shape: {cluster_feats_array.shape}")
     
+    # Debug: Check for problematic values
+    print(f"Cluster features - Min: {np.min(cluster_feats_array)}, Max: {np.max(cluster_feats_array)}")
+    print(f"Any inf values: {np.any(np.isinf(cluster_feats_array))}")
+    print(f"Any nan values: {np.any(np.isnan(cluster_feats_array))}")
+    
     cluster_feats_reduced = cluster_feats_array  # No reduction needed
     
     # Normalize cluster_feats and role_stance_feats using StandardScaler
@@ -228,7 +248,7 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         'role_stance_scaler': role_stance_scaler,
         'feature_names': ['dominant_cluster', 'cluster_diversity', 'narrative_strength', 
                          'narrative_coverage', 'cluster_concentration', 'max_cluster_strength',
-                         'avg_cluster_strength', 'cluster_entropy'],
+                         'cluster_coverage_ratio', 'strength_variation'],
         'num_structural_features': cluster_feats_array.shape[1]
     }
     
