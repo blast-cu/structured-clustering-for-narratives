@@ -355,10 +355,13 @@ class NeuralNetTrainer:
         
         # Analyze feature importance for each class
         print("\n=== FEATURE IMPORTANCE ANALYSIS ===")
+        print(f"Debug - Cluster features: {len(cluster_names)}, Role features: {len(role_names)}, Stance features: {len(stance_names)}")
         
         # Define feature boundaries
         cluster_end = len(cluster_names)
         role_end = cluster_end + len(role_names)
+        total_features = len(feature_names)
+        print(f"Debug - Boundaries - Cluster: 0:{cluster_end}, Role: {cluster_end}:{role_end}, Stance: {role_end}:{total_features}")
         
         for class_idx in range(len(label_encoder.classes_)):  # Show all classes
             class_name = label_encoder.classes_[class_idx]
@@ -377,18 +380,23 @@ class NeuralNetTrainer:
             
             # Get top 5 role features
             role_shap = class_shap_values[cluster_end:role_end]
-            top_role_indices = np.argsort(role_shap)[-5:][::-1]
-            print("  Top 5 Role Features:")
-            for i, idx in enumerate(top_role_indices):
-                importance = role_shap[idx]
-                role_idx = cluster_end + idx
-                print(f"    {i+1}. {role_names[idx]}: {importance:.4f}")
+            if len(role_shap) > 0:
+                top_role_indices = np.argsort(role_shap)[-min(5, len(role_shap)):][::-1]
+                print("  Top 5 Role Features:")
+                for i, idx in enumerate(top_role_indices):
+                    importance = role_shap[idx]
+                    print(f"    {i+1}. {role_names[idx]}: {importance:.4f}")
+            else:
+                print("  Top 5 Role Features: No role features found")
             
             # Show both stance features
             stance_shap = class_shap_values[role_end:]
-            print("  Both Stance Features:")
-            for i, importance in enumerate(stance_shap):
-                print(f"    {i+1}. {stance_names[i]}: {importance:.4f}")
+            if len(stance_shap) > 0:
+                print("  Both Stance Features:")
+                for i, importance in enumerate(stance_shap):
+                    print(f"    {i+1}. {stance_names[i]}: {importance:.4f}")
+            else:
+                print("  Both Stance Features: No stance features found")
         
         print("================================\n")
         
