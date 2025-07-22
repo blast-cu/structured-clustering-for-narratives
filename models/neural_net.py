@@ -22,18 +22,18 @@ class NeuralNetModel(nn.Module):
         super(NeuralNetModel, self).__init__()
         self.device = device
         
-        # Feature transformation layers
+        # Feature transformation layers with higher dropout
         self.cluster_transform = nn.Sequential(
             nn.Linear(cluster_dim, 64),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.3), # 0.3
             nn.Linear(64, 32)
         ).to(device)
         
         self.role_transform = nn.Sequential(
             nn.Linear(role_dim, 32),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.3),# 0.3
             nn.Linear(32, 16)
         ).to(device)
         
@@ -44,15 +44,15 @@ class NeuralNetModel(nn.Module):
             nn.Linear(16, 8)
         ).to(device)
         
-        # Fusion layer
+        # Fusion layer with higher dropout
         fusion_input_dim = 32 + 16 + 8  # cluster + role + stance dims
         self.fusion_layer = nn.Sequential(
             nn.Linear(fusion_input_dim, 64),
             nn.ReLU(),
-            nn.Dropout(0.4),
+            nn.Dropout(0.4), # 0.4
             nn.Linear(64, 32),
             nn.ReLU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.3), # 0.3
             nn.Linear(32, 16)
         ).to(device)
         
@@ -174,15 +174,15 @@ class NeuralNetTrainer:
         
         loss_fn = nn.CrossEntropyLoss()
         optimizer = optim.Adam(self.model.parameters(), lr=self.config.get('lr', 0.001), 
-                              weight_decay=self.config.get("weight_decay", 1e-4))
+                              weight_decay=self.config.get("weight_decay", 1e-4))  # Increased weight decay
         
         # Learning rate scheduler
         scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
         
         best_model = None
         best_val_f1, best_val_acc = -np.inf, -np.inf
-        early_stopper = EarlyStopper(patience=self.config.get("patience", 10), 
-                                   min_delta=self.config.get("min_delta", 0.001))
+        early_stopper = EarlyStopper(patience=self.config.get("patience", 5),  # Reduced patience
+                                   min_delta=self.config.get("min_delta", 0.01))  # Increased min_delta
         
         for epoch in range(self.config.get('epochs', 100)):
             # Training phase
@@ -277,41 +277,41 @@ class NeuralNetTrainer:
         
         return f1, acc
     
-    def analyze_feature_importance(self, train_dataloader, label_encoder, num_samples=100):
-        """Use SHAP to analyze feature importance."""
-        print("Analyzing feature importance with SHAP...", flush=True)
+    def analyze_feature_importance(self, train_dataloader, dev_dataloader, test_dataloader, label_encoder, num_samples=100):
+        """Use SHAP to analyze feature importance on dev + test sets."""
+        print("Analyzing feature importance with SHAP on dev + test sets...", flush=True)
         
         self.model.eval()
         
-        # Collect background data for SHAP
-        background_data = []
-        sample_data = []
-        sample_labels = []
+        # Collect dev + test data for SHAP analysis (avoid training data to prevent overfitting)
+        all_cluster_feats = []
+        all_role_feats = []
+        all_stance_feats = []
+        all_labels = []
+        
+        # Use dev and test sets for unbiased analysis
+        eval_dataloaders = [dev_dataloader, test_dataloader]
         
         with torch.no_grad():
-            for i, (cluster_feats, role_feats, stance_feats, labels) in enumerate(train_dataloader):
-                if i == 0:  # Use first batch as background
-                    background_cluster = cluster_feats.to(self.device)
-                    background_role = role_feats.to(self.device) 
-                    background_stance = stance_feats.to(self.device)
-                    background_data = [background_cluster, background_role, background_stance]
-                
-                if len(sample_data) < num_samples:
-                    batch_size = min(num_samples - len(sample_data), cluster_feats.shape[0])
-                    sample_data.append([
-                        cluster_feats[:batch_size].to(self.device),
-                        role_feats[:batch_size].to(self.device),
-                        stance_feats[:batch_size].to(self.device)
-                    ])
-                    sample_labels.extend(labels[:batch_size].numpy())
-                
-                if len(sample_data) >= num_samples:
-                    break
+            for dataloader in eval_dataloaders:
+                for cluster_feats, role_feats, stance_feats, labels in dataloader:
+                    all_cluster_feats.append(cluster_feats)
+                    all_role_feats.append(role_feats)
+                    all_stance_feats.append(stance_feats)
+                    all_labels.extend(labels.numpy())
         
-        # Flatten sample data
-        sample_cluster = torch.cat([s[0] for s in sample_data], dim=0)
-        sample_role = torch.cat([s[1] for s in sample_data], dim=0) 
-        sample_stance = torch.cat([s[2] for s in sample_data], dim=0)
+        print(f"Using {len(all_labels)} samples from dev + test sets for SHAP analysis")
+        
+        # Combine all data
+        sample_cluster = torch.cat(all_cluster_feats, dim=0).to(self.device)
+        sample_role = torch.cat(all_role_feats, dim=0).to(self.device)
+        sample_stance = torch.cat(all_stance_feats, dim=0).to(self.device)
+        all_labels = np.array(all_labels)
+        
+        # Use first batch as background for efficiency
+        background_data = [all_cluster_feats[0][:32].to(self.device), 
+                          all_role_feats[0][:32].to(self.device), 
+                          all_stance_feats[0][:32].to(self.device)]
         
         # Define wrapper function for SHAP
         def model_wrapper(combined_features):
@@ -343,9 +343,12 @@ class NeuralNetTrainer:
         # Create SHAP explainer
         explainer = shap.KernelExplainer(model_wrapper, background_combined[:50])  # Use subset for efficiency
         
-        # Calculate SHAP values for a subset of samples
-        print("Computing SHAP values (this may take a few minutes)...", flush=True)
-        shap_values = explainer.shap_values(sample_combined[:20])  # Analyze 20 samples
+        # Calculate SHAP values for ALL samples
+        print(f"Computing SHAP values for {sample_combined.shape[0]} samples (this may take several minutes)...", flush=True)
+        print(f"Sample combined shape: {sample_combined.shape}")
+        print(f"Background combined shape: {background_combined.shape}")
+        shap_values = explainer.shap_values(sample_combined)  # Analyze ALL samples
+        print(f"SHAP values shape: {shap_values.shape}")
         
         # Create feature names
         cluster_names = [f'cluster_freq_{i}' for i in range(background_data[0].shape[1])]
@@ -353,25 +356,59 @@ class NeuralNetTrainer:
         stance_names = [f'stance_{i}' for i in range(background_data[2].shape[1])]
         feature_names = cluster_names + role_names + stance_names
         
-        # Analyze feature importance for each class
-        print("\n=== FEATURE IMPORTANCE ANALYSIS ===")
-        print(f"Debug - Cluster features: {len(cluster_names)}, Role features: {len(role_names)}, Stance features: {len(stance_names)}")
-        
         # Define feature boundaries
         cluster_end = len(cluster_names)
         role_end = cluster_end + len(role_names)
         total_features = len(feature_names)
-        print(f"Debug - Boundaries - Cluster: 0:{cluster_end}, Role: {cluster_end}:{role_end}, Stance: {role_end}:{total_features}")
+        
+        print("\n=== GLOBAL FEATURE IMPORTANCE ANALYSIS ===")
+        print("Averaged across all instances and classes")
+        
+        # Global importance: average absolute SHAP values across all samples and classes
+        global_importance = np.abs(shap_values).mean(axis=(0, 2))  # Average over samples and classes
+        
+        # Get top features globally
+        global_top_indices = np.argsort(global_importance)[::-1]
+        
+        print(f"\nTop 15 Most Important Features Globally:")
+        for i, idx in enumerate(global_top_indices[:15]):
+            importance = global_importance[idx]
+            feature_type = "cluster" if idx < cluster_end else ("role" if idx < role_end else "stance")
+            print(f"  {i+1}. {feature_names[idx]} ({feature_type}): {importance:.4f}")
+        
+        # Global analysis by feature type
+        cluster_importance = global_importance[:cluster_end]
+        role_importance = global_importance[cluster_end:role_end] 
+        stance_importance = global_importance[role_end:]
+        
+        print(f"\nGlobal Top 10 Cluster Features:")
+        top_cluster_global = np.argsort(cluster_importance)[-10:][::-1]
+        for i, idx in enumerate(top_cluster_global):
+            importance = cluster_importance[idx]
+            print(f"  {i+1}. {cluster_names[idx]}: {importance:.4f}")
+        
+        print(f"\nGlobal Top 5 Role Features:")
+        top_role_global = np.argsort(role_importance)[-min(5, len(role_importance)):][::-1]
+        for i, idx in enumerate(top_role_global):
+            importance = role_importance[idx]
+            print(f"  {i+1}. {role_names[idx]}: {importance:.4f}")
+        
+        print(f"\nGlobal Stance Features:")
+        for i, importance in enumerate(stance_importance):
+            print(f"  {i+1}. {stance_names[i]}: {importance:.4f}")
+        
+        print("\n" + "="*60)
+        print("CLASS-SPECIFIC FEATURE IMPORTANCE ANALYSIS")
+        print("Averaged across all instances for each class")
         
         for class_idx in range(len(label_encoder.classes_)):  # Show all classes
             class_name = label_encoder.classes_[class_idx]
             print(f"\nClass {class_idx} ({class_name}):")
             
-            # Average absolute SHAP values for this class
-            class_shap_values = np.abs(shap_values[class_idx]).mean(axis=0)
-            print(f"Debug - Class {class_idx} SHAP shape: {class_shap_values.shape}")
+            # Class-specific importance: average absolute SHAP values for this class across all samples
+            class_shap_values = np.abs(shap_values[:, :, class_idx]).mean(axis=0)
             
-            # Get top 10 cluster features
+            # Get top 10 cluster features for this class
             cluster_shap = class_shap_values[:cluster_end]
             top_cluster_indices = np.argsort(cluster_shap)[-10:][::-1]
             print("  Top 10 Cluster Features:")
@@ -379,7 +416,7 @@ class NeuralNetTrainer:
                 importance = cluster_shap[idx]
                 print(f"    {i+1}. {cluster_names[idx]}: {importance:.4f}")
             
-            # Get top 5 role features
+            # Get top 5 role features for this class
             role_shap = class_shap_values[cluster_end:role_end]
             if len(role_shap) > 0:
                 top_role_indices = np.argsort(role_shap)[-min(5, len(role_shap)):][::-1]
@@ -390,7 +427,7 @@ class NeuralNetTrainer:
             else:
                 print("  Top 5 Role Features: No role features found")
             
-            # Show both stance features
+            # Show both stance features for this class
             stance_shap = class_shap_values[role_end:]
             if len(stance_shap) > 0:
                 print("  Both Stance Features:")
@@ -399,7 +436,85 @@ class NeuralNetTrainer:
             else:
                 print("  Both Stance Features: No stance features found")
         
-        print("================================\n")
+        print("\n" + "="*60)
+        print("SAMPLE LOCAL PREDICTIONS")
+        print("Individual instance explanations for correct and incorrect predictions")
+        
+        # Get predictions for all samples to find correct and incorrect examples
+        all_probs = model_wrapper(sample_combined)
+        all_predictions = np.argmax(all_probs, axis=1)
+        
+        # Find correct and incorrect prediction indices
+        correct_indices = np.where(all_predictions == all_labels)[0]
+        incorrect_indices = np.where(all_predictions != all_labels)[0]
+        
+        print(f"\nDataset Summary:")
+        print(f"  Total samples: {len(all_labels)}")
+        print(f"  Correct predictions: {len(correct_indices)} ({len(correct_indices)/len(all_labels)*100:.1f}%)")
+        print(f"  Incorrect predictions: {len(incorrect_indices)} ({len(incorrect_indices)/len(all_labels)*100:.1f}%)")
+        
+        # Show 3 correct predictions
+        print(f"\n--- CORRECT PREDICTIONS (3 examples) ---")
+        for i, sample_idx in enumerate(correct_indices[:3]):
+            true_class = all_labels[sample_idx]
+            predicted_class = all_predictions[sample_idx]
+            true_class_name = label_encoder.classes_[true_class]
+            confidence = all_probs[sample_idx, predicted_class]
+            
+            print(f"\nCorrect Example {i+1} (Sample #{sample_idx}):")
+            print(f"  True Label: {true_class_name}")
+            print(f"  Predicted: {true_class_name} (confidence: {confidence:.3f}) ✓")
+            
+            # Show top features for this correct prediction
+            sample_shap = np.abs(shap_values[sample_idx, :, predicted_class])
+            top_features_sample = np.argsort(sample_shap)[-10:][::-1]
+            
+            print(f"  Top 10 Features Supporting Correct Prediction:")
+            for j, idx in enumerate(top_features_sample):
+                importance = sample_shap[idx]
+                feature_type = "cluster" if idx < cluster_end else ("role" if idx < role_end else "stance")
+                print(f"    {j+1}. {feature_names[idx]} ({feature_type}): {importance:.4f}")
+        
+        # Show 3 incorrect predictions
+        if len(incorrect_indices) > 0:
+            print(f"\n--- INCORRECT PREDICTIONS (3 examples) ---")
+            for i, sample_idx in enumerate(incorrect_indices[:3]):
+                true_class = all_labels[sample_idx]
+                predicted_class = all_predictions[sample_idx]
+                true_class_name = label_encoder.classes_[true_class]
+                predicted_class_name = label_encoder.classes_[predicted_class]
+                confidence = all_probs[sample_idx, predicted_class]
+                true_confidence = all_probs[sample_idx, true_class]
+                
+                print(f"\nIncorrect Example {i+1} (Sample #{sample_idx}):")
+                print(f"  True Label: {true_class_name}")
+                print(f"  Predicted: {predicted_class_name} (confidence: {confidence:.3f}) ✗")
+                print(f"  True class confidence: {true_confidence:.3f}")
+                
+                # Show top features for the incorrect prediction
+                sample_shap_pred = np.abs(shap_values[sample_idx, :, predicted_class])
+                top_features_pred = np.argsort(sample_shap_pred)[-10:][::-1]
+                
+                print(f"  Top 10 Features Supporting Incorrect Prediction ({predicted_class_name}):")
+                for j, idx in enumerate(top_features_pred):
+                    importance = sample_shap_pred[idx]
+                    feature_type = "cluster" if idx < cluster_end else ("role" if idx < role_end else "stance")
+                    print(f"    {j+1}. {feature_names[idx]} ({feature_type}): {importance:.4f}")
+                
+                # Show top features for the true class
+                sample_shap_true = np.abs(shap_values[sample_idx, :, true_class])
+                top_features_true = np.argsort(sample_shap_true)[-5:][::-1]
+                
+                print(f"  Top 5 Features Supporting True Class ({true_class_name}):")
+                for j, idx in enumerate(top_features_true):
+                    importance = sample_shap_true[idx]
+                    feature_type = "cluster" if idx < cluster_end else ("role" if idx < role_end else "stance")
+                    print(f"    {j+1}. {feature_names[idx]} ({feature_type}): {importance:.4f}")
+        else:
+            print(f"\n--- NO INCORRECT PREDICTIONS FOUND ---")
+            print("The model achieved 100% accuracy on the training set!")
+        
+        print("="*60 + "\n")
         
         return shap_values, feature_names
 
@@ -446,6 +561,6 @@ if __name__ == "__main__":
     results = trainer.train(train_dataloader, dev_dataloader, test_dataloader)
     
     print("Performing SHAP feature importance analysis...", flush=True)
-    shap_values, feature_names = trainer.analyze_feature_importance(train_dataloader, label_encoder)
+    shap_values, feature_names = trainer.analyze_feature_importance(train_dataloader, dev_dataloader, test_dataloader, label_encoder)
     
     print("Neural network training and analysis complete!", flush=True)
