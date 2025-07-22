@@ -356,21 +356,39 @@ class NeuralNetTrainer:
         # Analyze feature importance for each class
         print("\n=== FEATURE IMPORTANCE ANALYSIS ===")
         
-        for class_idx in range(min(len(label_encoder.classes_), 5)):  # Show top 5 classes
+        # Define feature boundaries
+        cluster_end = len(cluster_names)
+        role_end = cluster_end + len(role_names)
+        
+        for class_idx in range(len(label_encoder.classes_)):  # Show all classes
             class_name = label_encoder.classes_[class_idx]
             print(f"\nClass {class_idx} ({class_name}):")
             
             # Average absolute SHAP values for this class
             class_shap_values = np.abs(shap_values[class_idx]).mean(axis=0)
             
-            # Get top 10 most important features
-            top_indices = np.argsort(class_shap_values)[-10:][::-1]
+            # Get top 10 cluster features
+            cluster_shap = class_shap_values[:cluster_end]
+            top_cluster_indices = np.argsort(cluster_shap)[-10:][::-1]
+            print("  Top 10 Cluster Features:")
+            for i, idx in enumerate(top_cluster_indices):
+                importance = cluster_shap[idx]
+                print(f"    {i+1}. {cluster_names[idx]}: {importance:.4f}")
             
-            print("Top 10 Most Important Features:")
-            for i, idx in enumerate(top_indices):
-                importance = class_shap_values[idx]
-                feature_type = "cluster" if idx < len(cluster_names) else ("role" if idx < len(cluster_names) + len(role_names) else "stance")
-                print(f"  {i+1}. {feature_names[idx]} ({feature_type}): {importance:.4f}")
+            # Get top 5 role features
+            role_shap = class_shap_values[cluster_end:role_end]
+            top_role_indices = np.argsort(role_shap)[-5:][::-1]
+            print("  Top 5 Role Features:")
+            for i, idx in enumerate(top_role_indices):
+                importance = role_shap[idx]
+                role_idx = cluster_end + idx
+                print(f"    {i+1}. {role_names[idx]}: {importance:.4f}")
+            
+            # Show both stance features
+            stance_shap = class_shap_values[role_end:]
+            print("  Both Stance Features:")
+            for i, importance in enumerate(stance_shap):
+                print(f"    {i+1}. {stance_names[i]}: {importance:.4f}")
         
         print("================================\n")
         
