@@ -18,12 +18,13 @@ class LinearSurrogateModel:
     """Linear surrogate model for interpreting BERT predictions using Elastic Net."""
     
     def __init__(self, config, num_classes=14, approach='one_vs_rest',
-                 train_on_probs=True, use_cluster_feats=True, use_role_feats=True, 
+                 train_on_probs=True, use_gold_labels=False, use_cluster_feats=True, use_role_feats=True, 
                  use_stance_feats=True, use_frequency_features=False, seed=42, n_trials=50):
         self.config = config
         self.model = None
         self.approach = approach
         self.train_on_probs = train_on_probs
+        self.use_gold_labels = use_gold_labels
         self.num_classes = num_classes
         self.use_cluster_feats = use_cluster_feats
         self.use_role_feats = use_role_feats
@@ -127,6 +128,9 @@ class LinearSurrogateModel:
         y_probs = np.array(all_probabilities)
         y_classes = np.array(all_predictions)
         
+        # Extract gold labels
+        y_gold_labels = np.array(full_df['frame_label_encoded'].tolist())
+        
         self.feature_names = feature_names
         
         # Split back into train/dev/test
@@ -143,7 +147,10 @@ class LinearSurrogateModel:
             'y_test_probs': y_probs[test_mask],
             'y_train_classes': y_classes[train_mask],
             'y_dev_classes': y_classes[dev_mask],
-            'y_test_classes': y_classes[test_mask]
+            'y_test_classes': y_classes[test_mask],
+            'y_train_gold': y_gold_labels[train_mask],
+            'y_dev_gold': y_gold_labels[dev_mask],
+            'y_test_gold': y_gold_labels[test_mask]
         }
     
     def optimize_hyperparameters(self, X_train, y_train, X_dev, y_dev):
@@ -166,19 +173,19 @@ class LinearSurrogateModel:
                     random_state=42
                 )
                 
-                if self.train_on_probs:
-                    y_train_weighted = np.argmax(y_train, axis=1)
-                    y_dev_weighted = np.argmax(y_dev, axis=1)
-                else:
+                if self.use_gold_labels or not self.train_on_probs:
                     y_train_weighted = y_train
                     y_dev_weighted = y_dev
+                else:
+                    y_train_weighted = np.argmax(y_train, axis=1)
+                    y_dev_weighted = np.argmax(y_dev, axis=1)
                 
                 model.fit(X_train, y_train_weighted)
                 y_pred = model.predict(X_dev)
                 score = f1_score(y_dev_weighted, y_pred, average='weighted')
                 
             else:  # one_vs_rest
-                if self.train_on_probs:
+                if self.train_on_probs and not self.use_gold_labels:
                     # Train on probability values - use regression
                     scores = []
                     for class_idx in range(self.num_classes):
@@ -195,7 +202,7 @@ class LinearSurrogateModel:
                         scores.append(-mse)
                     score = np.mean(scores)
                 else:
-                    # Train on class labels - use classification
+                    # Train on class labels (either gold or BERT) - use classification
                     model = OneVsRestClassifier(
                         LogisticRegression(
                             penalty='elasticnet',
@@ -221,12 +228,21 @@ class LinearSurrogateModel:
     def train(self, data):
         """Train linear surrogate model."""
         print(f"Training {self.approach} linear surrogate model...", flush=True)
-        print(f"Training on {'probabilities' if self.train_on_probs else 'class labels'}...", flush=True)
+        
+        if self.use_gold_labels:
+            print("Training on gold labels...", flush=True)
+        elif self.train_on_probs:
+            print("Training on BERT probabilities...", flush=True)  
+        else:
+            print("Training on BERT class labels...", flush=True)
         
         X_train = data['X_train']
         X_dev = data['X_dev']
         
-        if self.train_on_probs:
+        if self.use_gold_labels:
+            y_train = data['y_train_gold']
+            y_dev = data['y_dev_gold']
+        elif self.train_on_probs:
             y_train = data['y_train_probs']
             y_dev = data['y_dev_probs']
         else:
@@ -253,15 +269,15 @@ class LinearSurrogateModel:
                 random_state=42
             )
             
-            if self.train_on_probs:
-                y_train_final = np.argmax(y_train, axis=1)
-            else:
+            if self.use_gold_labels or not self.train_on_probs:
                 y_train_final = y_train
+            else:  # self.train_on_probs and not self.use_gold_labels
+                y_train_final = np.argmax(y_train, axis=1)
                 
             self.model.fit(X_train_scaled, y_train_final)
             
         else:  # one_vs_rest
-            if self.train_on_probs:
+            if self.train_on_probs and not self.use_gold_labels:
                 # Train separate regression models for each class probability
                 self.models = []
                 for class_idx in range(self.num_classes):
@@ -275,7 +291,7 @@ class LinearSurrogateModel:
                     model.fit(X_train_scaled, y_train[:, class_idx])
                     self.models.append(model)
             else:
-                # Train one-vs-rest classification
+                # Train one-vs-rest classification (gold or BERT class labels)
                 self.model = OneVsRestClassifier(
                     LogisticRegression(
                         penalty='elasticnet',
@@ -299,7 +315,7 @@ class LinearSurrogateModel:
                 return self._predictions_to_probs(self.model.predict(X_scaled))
                 
         else:  # one_vs_rest
-            if self.train_on_probs:
+            if self.train_on_probs and not self.use_gold_labels:
                 # Get predictions from each regression model
                 predictions = []
                 for model in self.models:
@@ -315,11 +331,12 @@ class LinearSurrogateModel:
                 
                 return normalized_probs
             else:
+                # Either gold labels or BERT class labels - use classification model
                 return self.model.predict_proba(X_scaled)
     
     def predict_classes(self, X):
         """Predict class labels."""
-        if self.approach == 'one_vs_rest' and self.train_on_probs:
+        if self.approach == 'one_vs_rest' and self.train_on_probs and not self.use_gold_labels:
             probs = self.predict_probabilities(X)
             return np.argmax(probs, axis=1)
         else:
@@ -477,6 +494,8 @@ if __name__ == "__main__":
                         help='Training approach (default: one_vs_rest)')
     parser.add_argument('--train-on-probs', action='store_true',
                         help='Train on BERT probability distributions instead of class labels')
+    parser.add_argument('--use-gold-labels', action='store_true',
+                        help='Train on gold labels instead of BERT predictions (overrides --train-on-probs)')
     parser.add_argument('--num-classes', type=int, default=14,
                         help='Number of classes (default: 14)')
     parser.add_argument('--seed', type=int, default=42,
@@ -498,7 +517,12 @@ if __name__ == "__main__":
     config = ConfigFactory.parse_file('./config.conf')[args.c]
     
     print(f"Training approach: {args.approach}")
-    print(f"Training target: {'probabilities' if args.train_on_probs else 'class labels'}")
+    if args.use_gold_labels:
+        print("Training target: gold labels")
+    elif args.train_on_probs:
+        print("Training target: BERT probabilities")
+    else:
+        print("Training target: BERT class labels")
     print(f"Feature type: {'frequency counts' if args.use_frequency_features else 'structural features'}")
     print(f"Features: cluster={not args.no_cluster_feats}, role={not args.no_role_feats}, stance={not args.no_stance_feats}")
     
@@ -508,6 +532,7 @@ if __name__ == "__main__":
         num_classes=args.num_classes,
         approach=args.approach,
         train_on_probs=args.train_on_probs,
+        use_gold_labels=args.use_gold_labels,
         use_cluster_feats=not args.no_cluster_feats,
         use_role_feats=not args.no_role_feats,
         use_stance_feats=not args.no_stance_feats,
@@ -540,5 +565,10 @@ if __name__ == "__main__":
     
     print(f"\nLinear surrogate model training complete!")
     print(f"Approach: {args.approach}")
-    print(f"Training target: {'BERT probabilities' if args.train_on_probs else 'BERT class labels'}")
+    if args.use_gold_labels:
+        print("Training target: gold labels")
+    elif args.train_on_probs:
+        print("Training target: BERT probabilities")
+    else:
+        print("Training target: BERT class labels")
     print(f"Model saved to: {args.output_path}")
