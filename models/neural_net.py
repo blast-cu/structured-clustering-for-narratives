@@ -10,7 +10,6 @@ from pyhocon import ConfigFactory
 from sklearn.metrics import f1_score, accuracy_score
 from tqdm import tqdm
 import shap
-import pandas as pd
 
 from utils.early_stopper import EarlyStopper
 

@@ -55,7 +55,7 @@ class ClusterAnalyzer:
 
 
     @staticmethod
-    def filter_chains_by_centroid_proximity(clustering_data, top_k_percent=25.0):
+    def filter_chains_by_centroid_proximity(clustering_data, top_k_percent=50.0):
         embeddings = clustering_data['embeddings']
         labels = clustering_data['labels']
         centroids = clustering_data['cluster_centers']
