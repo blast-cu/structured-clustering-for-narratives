@@ -1,0 +1,424 @@
+import argparse
+import pickle
+import random
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from pyhocon import ConfigFactory
+from sklearn.metrics import f1_score, accuracy_score
+from tqdm import tqdm
+import shap
+import pandas as pd
+
+from utils.early_stopper import EarlyStopper
+
+
+class NeuralNetModel(nn.Module):
+    """Neural network model using only cluster, role, and stance frequency features (no BERT)."""
+    
+    def __init__(self, config, cluster_dim, role_dim, stance_dim, num_classes, device):
+        super(NeuralNetModel, self).__init__()
+        self.device = device
+        
+        # Feature transformation layers
+        self.cluster_transform = nn.Sequential(
+            nn.Linear(cluster_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(64, 32)
+        ).to(device)
+        
+        self.role_transform = nn.Sequential(
+            nn.Linear(role_dim, 32),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(32, 16)
+        ).to(device)
+        
+        self.stance_transform = nn.Sequential(
+            nn.Linear(stance_dim, 16),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(16, 8)
+        ).to(device)
+        
+        # Fusion layer
+        fusion_input_dim = 32 + 16 + 8  # cluster + role + stance dims
+        self.fusion_layer = nn.Sequential(
+            nn.Linear(fusion_input_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(0.4),
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Dropout(0.3),
+            nn.Linear(32, 16)
+        ).to(device)
+        
+        # Final classifier
+        self.classifier = nn.Linear(16, num_classes).to(device)
+        
+    def forward(self, cluster_feats, role_feats, stance_feats):
+        # Transform each feature type separately
+        cluster_repr = self.cluster_transform(cluster_feats)
+        role_repr = self.role_transform(role_feats)
+        stance_repr = self.stance_transform(stance_feats)
+        
+        # Combine representations
+        combined_feats = torch.cat([cluster_repr, role_repr, stance_repr], dim=1)
+        fused_feats = self.fusion_layer(combined_feats)
+        
+        # Final classification
+        output = self.classifier(fused_feats)
+        return output
+
+
+class Dataset(torch.utils.data.Dataset):
+    def __init__(self, cluster_feats, role_feats, stance_feats, labels):
+        self.cluster_feats = cluster_feats
+        self.role_feats = role_feats
+        self.stance_feats = stance_feats
+        self.labels = labels
+        
+    def __len__(self):
+        return len(self.cluster_feats)
+    
+    def __getitem__(self, index):
+        return (
+            self.cluster_feats[index],
+            self.role_feats[index], 
+            self.stance_feats[index],
+            self.labels[index]
+        )
+
+
+class NeuralNetTrainer:
+    def __init__(self, config):
+        self.config = config
+        
+        # Set random seeds
+        seed = self.config["seed"]
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.random.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(f"Using device: {self.device}")
+        
+    def load_dataset(self):
+        """Load pre-created dataset from disk."""
+        print("Loading dataset from disk...", flush=True)
+        
+        with open(self.config["frame_prediction_data_path"] + "frame_prediction_data.pickle", "rb") as f:
+            dataset = pickle.load(f)
+        
+        train_df = dataset['train_df']
+        dev_df = dataset['dev_df']
+        test_df = dataset['test_df']
+        label_encoder = dataset['label_encoder']
+        
+        # Extract features - using frequency features instead of structural
+        train_cluster_feats = torch.tensor(train_df['cluster_feats_frequency'].tolist(), dtype=torch.float32)
+        dev_cluster_feats = torch.tensor(dev_df['cluster_feats_frequency'].tolist(), dtype=torch.float32)
+        test_cluster_feats = torch.tensor(test_df['cluster_feats_frequency'].tolist(), dtype=torch.float32)
+        
+        train_role_feats = torch.tensor(train_df['role_feats'].tolist(), dtype=torch.float32)
+        dev_role_feats = torch.tensor(dev_df['role_feats'].tolist(), dtype=torch.float32)
+        test_role_feats = torch.tensor(test_df['role_feats'].tolist(), dtype=torch.float32)
+        
+        train_stance_feats = torch.tensor(train_df['stance_feats'].tolist(), dtype=torch.float32)
+        dev_stance_feats = torch.tensor(dev_df['stance_feats'].tolist(), dtype=torch.float32)
+        test_stance_feats = torch.tensor(test_df['stance_feats'].tolist(), dtype=torch.float32)
+        
+        train_labels = torch.tensor(train_df['frame_label_encoded'].tolist(), dtype=torch.long)
+        dev_labels = torch.tensor(dev_df['frame_label_encoded'].tolist(), dtype=torch.long)
+        test_labels = torch.tensor(test_df['frame_label_encoded'].tolist(), dtype=torch.long)
+        
+        print(f"Feature dimensions - Cluster: {train_cluster_feats.shape[1]}, Role: {train_role_feats.shape[1]}, Stance: {train_stance_feats.shape[1]}")
+        print(f"Number of classes: {len(label_encoder.classes_)}")
+        
+        # Initialize model with correct dimensions
+        self.model = NeuralNetModel(
+            self.config,
+            cluster_dim=train_cluster_feats.shape[1],
+            role_dim=train_role_feats.shape[1], 
+            stance_dim=train_stance_feats.shape[1],
+            num_classes=len(label_encoder.classes_),
+            device=self.device
+        )
+        
+        # Create dataloaders
+        train_dataset = Dataset(train_cluster_feats, train_role_feats, train_stance_feats, train_labels)
+        dev_dataset = Dataset(dev_cluster_feats, dev_role_feats, dev_stance_feats, dev_labels)
+        test_dataset = Dataset(test_cluster_feats, test_role_feats, test_stance_feats, test_labels)
+        
+        train_dataloader = torch.utils.data.DataLoader(
+            train_dataset, batch_size=self.config.get('batch_size', 32), shuffle=True
+        )
+        dev_dataloader = torch.utils.data.DataLoader(
+            dev_dataset, batch_size=self.config.get('batch_size', 32), shuffle=False
+        )
+        test_dataloader = torch.utils.data.DataLoader(
+            test_dataset, batch_size=self.config.get('batch_size', 32), shuffle=False
+        )
+        
+        return train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader
+    
+    def train(self, train_dataloader, dev_dataloader, test_dataloader):
+        """Train the neural network model with early stopping."""
+        print("Training neural network model...", flush=True)
+        
+        loss_fn = nn.CrossEntropyLoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=self.config.get('lr', 0.001), 
+                              weight_decay=self.config.get("weight_decay", 1e-4))
+        
+        # Learning rate scheduler
+        scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=3)
+        
+        best_model = None
+        best_val_f1, best_val_acc = -np.inf, -np.inf
+        early_stopper = EarlyStopper(patience=self.config.get("patience", 10), 
+                                   min_delta=self.config.get("min_delta", 0.001))
+        
+        for epoch in range(self.config.get('epochs', 100)):
+            # Training phase
+            self.model.train()
+            epoch_loss = 0
+            print(f"Epoch: {epoch}", flush=True)
+            
+            for cluster_feats, role_feats, stance_feats, labels in tqdm(train_dataloader):
+                cluster_feats = cluster_feats.to(self.device)
+                role_feats = role_feats.to(self.device)
+                stance_feats = stance_feats.to(self.device)
+                labels = labels.to(self.device)
+                
+                optimizer.zero_grad()
+                outputs = self.model(cluster_feats, role_feats, stance_feats)
+                loss = loss_fn(outputs, labels)
+                loss.backward()
+                optimizer.step()
+                
+                epoch_loss += loss.item()
+            
+            avg_loss = epoch_loss / len(train_dataloader)
+            print(f"Epoch Loss: {avg_loss:.4f}", flush=True)
+            
+            # Validation phase
+            print("Evaluation on validation set...", flush=True)
+            val_f1, val_acc = self.evaluate(self.model, dev_dataloader)
+            
+            scheduler.step(val_f1)
+            
+            # Early stopping check
+            if early_stopper.early_stop_score(val_f1):
+                print("Early Stopping...", flush=True)
+                print(f"Best Validation Accuracy: {best_val_acc:.4f}", flush=True)
+                print(f"Best Validation F1: {best_val_f1:.4f}", flush=True)
+                break
+                
+            # Save best model
+            if val_f1 > best_val_f1:
+                best_val_f1 = val_f1
+                best_val_acc = val_acc
+                best_model = self.model.state_dict().copy()
+        
+        # Load best model for final evaluation
+        if best_model is not None:
+            self.model.load_state_dict(best_model)
+        
+        # Final evaluation on all sets
+        print("Final evaluation on training set...", flush=True)
+        train_f1, train_acc = self.evaluate(self.model, train_dataloader)
+        
+        print("Final evaluation on validation set...", flush=True)
+        final_val_f1, final_val_acc = self.evaluate(self.model, dev_dataloader)
+        
+        print("Final evaluation on test set...", flush=True)  
+        test_f1, test_acc = self.evaluate(self.model, test_dataloader)
+        
+        # Print results in tabular format
+        print("\n=== FINAL RESULTS ===")
+        print("Split\t\tAccuracy\tF1 Score")
+        print(f"Train\t\t{train_acc*100:.2f}\t\t{train_f1*100:.2f}")
+        print(f"Validation\t{final_val_acc*100:.2f}\t\t{final_val_f1*100:.2f}")
+        print(f"Test\t\t{test_acc*100:.2f}\t\t{test_f1*100:.2f}")
+        print("====================\n")
+        
+        return train_f1, train_acc, final_val_f1, final_val_acc, test_f1, test_acc
+    
+    def evaluate(self, model, dataloader):
+        """Evaluate model performance."""
+        model.eval()
+        predicted_labels = []
+        true_labels = []
+        
+        with torch.no_grad():
+            for cluster_feats, role_feats, stance_feats, labels in dataloader:
+                cluster_feats = cluster_feats.to(self.device)
+                role_feats = role_feats.to(self.device)
+                stance_feats = stance_feats.to(self.device)
+                labels = labels.to(self.device)
+                
+                outputs = model(cluster_feats, role_feats, stance_feats)
+                predicted = torch.argmax(outputs, dim=1)
+                
+                predicted_labels.extend(predicted.cpu().numpy())
+                true_labels.extend(labels.cpu().numpy())
+        
+        f1 = f1_score(true_labels, predicted_labels, average='weighted')
+        acc = accuracy_score(true_labels, predicted_labels)
+        
+        print(f"Accuracy: {acc*100:.2f}%", flush=True)
+        print(f"F1 Score: {f1*100:.2f}%", flush=True)
+        
+        return f1, acc
+    
+    def analyze_feature_importance(self, train_dataloader, label_encoder, num_samples=100):
+        """Use SHAP to analyze feature importance."""
+        print("Analyzing feature importance with SHAP...", flush=True)
+        
+        self.model.eval()
+        
+        # Collect background data for SHAP
+        background_data = []
+        sample_data = []
+        sample_labels = []
+        
+        with torch.no_grad():
+            for i, (cluster_feats, role_feats, stance_feats, labels) in enumerate(train_dataloader):
+                if i == 0:  # Use first batch as background
+                    background_cluster = cluster_feats.to(self.device)
+                    background_role = role_feats.to(self.device) 
+                    background_stance = stance_feats.to(self.device)
+                    background_data = [background_cluster, background_role, background_stance]
+                
+                if len(sample_data) < num_samples:
+                    batch_size = min(num_samples - len(sample_data), cluster_feats.shape[0])
+                    sample_data.append([
+                        cluster_feats[:batch_size].to(self.device),
+                        role_feats[:batch_size].to(self.device),
+                        stance_feats[:batch_size].to(self.device)
+                    ])
+                    sample_labels.extend(labels[:batch_size].numpy())
+                
+                if len(sample_data) >= num_samples:
+                    break
+        
+        # Flatten sample data
+        sample_cluster = torch.cat([s[0] for s in sample_data], dim=0)
+        sample_role = torch.cat([s[1] for s in sample_data], dim=0) 
+        sample_stance = torch.cat([s[2] for s in sample_data], dim=0)
+        
+        # Define wrapper function for SHAP
+        def model_wrapper(combined_features):
+            batch_size = combined_features.shape[0]
+            cluster_dim = background_data[0].shape[1]
+            role_dim = background_data[1].shape[1]
+            stance_dim = background_data[2].shape[1]
+            
+            # Split combined features back
+            cluster_feats = combined_features[:, :cluster_dim]
+            role_feats = combined_features[:, cluster_dim:cluster_dim+role_dim]
+            stance_feats = combined_features[:, cluster_dim+role_dim:]
+            
+            # Convert to tensors
+            cluster_tensor = torch.tensor(cluster_feats, dtype=torch.float32, device=self.device)
+            role_tensor = torch.tensor(role_feats, dtype=torch.float32, device=self.device)
+            stance_tensor = torch.tensor(stance_feats, dtype=torch.float32, device=self.device)
+            
+            with torch.no_grad():
+                outputs = self.model(cluster_tensor, role_tensor, stance_tensor)
+                probabilities = torch.softmax(outputs, dim=1)
+            
+            return probabilities.cpu().numpy()
+        
+        # Combine features for SHAP
+        background_combined = torch.cat(background_data, dim=1).cpu().numpy()
+        sample_combined = torch.cat([sample_cluster, sample_role, sample_stance], dim=1).cpu().numpy()
+        
+        # Create SHAP explainer
+        explainer = shap.KernelExplainer(model_wrapper, background_combined[:50])  # Use subset for efficiency
+        
+        # Calculate SHAP values for a subset of samples
+        print("Computing SHAP values (this may take a few minutes)...", flush=True)
+        shap_values = explainer.shap_values(sample_combined[:20])  # Analyze 20 samples
+        
+        # Create feature names
+        cluster_names = [f'cluster_freq_{i}' for i in range(background_data[0].shape[1])]
+        role_names = [f'role_{i}' for i in range(background_data[1].shape[1])]
+        stance_names = [f'stance_{i}' for i in range(background_data[2].shape[1])]
+        feature_names = cluster_names + role_names + stance_names
+        
+        # Analyze feature importance for each class
+        print("\n=== FEATURE IMPORTANCE ANALYSIS ===")
+        
+        for class_idx in range(min(len(label_encoder.classes_), 5)):  # Show top 5 classes
+            class_name = label_encoder.classes_[class_idx]
+            print(f"\nClass {class_idx} ({class_name}):")
+            
+            # Average absolute SHAP values for this class
+            class_shap_values = np.abs(shap_values[class_idx]).mean(axis=0)
+            
+            # Get top 10 most important features
+            top_indices = np.argsort(class_shap_values)[-10:][::-1]
+            
+            print("Top 10 Most Important Features:")
+            for i, idx in enumerate(top_indices):
+                importance = class_shap_values[idx]
+                feature_type = "cluster" if idx < len(cluster_names) else ("role" if idx < len(cluster_names) + len(role_names) else "stance")
+                print(f"  {i+1}. {feature_names[idx]} ({feature_type}): {importance:.4f}")
+        
+        print("================================\n")
+        
+        return shap_values, feature_names
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Neural Network Frame Prediction')
+    parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
+    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
+    parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
+    parser.add_argument('--patience', type=int, default=10, help='Early stopping patience')
+    parser.add_argument('--min-delta', type=float, default=0.001, help='Early stopping minimum delta')
+    parser.add_argument('--weight-decay', type=float, default=1e-4, help='Weight decay')
+
+    args = parser.parse_args()
+    config = ConfigFactory.parse_file('./config.conf')[args.c]
+    
+    # Override config with command line arguments
+    if args.lr:
+        config['lr'] = args.lr
+    if args.epochs:
+        config['epochs'] = args.epochs  
+    if args.batch_size:
+        config['batch_size'] = args.batch_size
+    if args.patience:
+        config['patience'] = args.patience
+    if args.min_delta:
+        config['min_delta'] = args.min_delta
+    if args.weight_decay:
+        config['weight_decay'] = args.weight_decay
+    
+    print("Configuration:")
+    print(f"  Learning rate: {config.get('lr', 0.001)}")
+    print(f"  Epochs: {config.get('epochs', 100)}")
+    print(f"  Batch size: {config.get('batch_size', 32)}")
+    print(f"  Early stopping patience: {config.get('patience', 10)}")
+    print(f"  Weight decay: {config.get('weight_decay', 1e-4)}")
+    print()
+    
+    trainer = NeuralNetTrainer(config)
+    train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader = trainer.load_dataset()
+    
+    print("Training neural network model using only cluster, role, and stance frequency features...", flush=True)
+    results = trainer.train(train_dataloader, dev_dataloader, test_dataloader)
+    
+    print("Performing SHAP feature importance analysis...", flush=True)
+    shap_values, feature_names = trainer.analyze_feature_importance(train_dataloader, label_encoder)
+    
+    print("Neural network training and analysis complete!", flush=True)
