@@ -17,11 +17,10 @@ import optuna
 class LinearSurrogateModel:
     """Linear surrogate model for interpreting BERT predictions using Elastic Net."""
     
-    def __init__(self, dataset_path, predictions_path, num_classes=14, approach='one_vs_rest',
+    def __init__(self, config, num_classes=14, approach='one_vs_rest',
                  train_on_probs=True, use_cluster_feats=True, use_role_feats=True, 
                  use_stance_feats=True, seed=42, n_trials=50):
-        self.dataset_path = dataset_path
-        self.predictions_path = predictions_path
+        self.config = config
         self.model = None
         self.approach = approach
         self.train_on_probs = train_on_probs
@@ -45,11 +44,13 @@ class LinearSurrogateModel:
         print("Loading dataset and BERT predictions...", flush=True)
         
         # Load dataset with features
-        with open(self.dataset_path, "rb") as f:
+        dataset_path = self.config["frame_prediction_data_path"] + "frame_prediction_data.pickle"
+        with open(dataset_path, "rb") as f:
             dataset = pickle.load(f)
         
         # Load BERT predictions and probabilities
-        with open(self.predictions_path, "rb") as f:
+        predictions_path = self.config["frame_prediction_data_path"] + "bert_predictions.pickle"
+        with open(predictions_path, "rb") as f:
             bert_outputs = pickle.load(f)
         
         return dataset, bert_outputs
@@ -446,8 +447,7 @@ class LinearSurrogateModel:
             'train_on_probs': self.train_on_probs,
             'num_classes': self.num_classes,
             'feature_names': self.feature_names,
-            'dataset_path': self.dataset_path,
-            'predictions_path': self.predictions_path
+            'config': self.config
         }
         
         with open(path, 'wb') as f:
@@ -458,10 +458,7 @@ class LinearSurrogateModel:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Linear Surrogate Model')
-    parser.add_argument('--dataset-path', required=True, 
-                        help='Path to dataset pickle file')
-    parser.add_argument('--predictions-path', required=True,
-                        help='Path to BERT predictions pickle file')
+    parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
     parser.add_argument('--approach', choices=['multiclass', 'one_vs_rest'], 
                         default='one_vs_rest',
                         help='Training approach (default: one_vs_rest)')
@@ -483,6 +480,7 @@ if __name__ == "__main__":
                         help='Output path for saved model (default: models/linear_surrogate_model.pkl)')
     
     args = parser.parse_args()
+    config = ConfigFactory.parse_file('./config.conf')[args.c]
     
     print(f"Training approach: {args.approach}")
     print(f"Training target: {'probabilities' if args.train_on_probs else 'class labels'}")
@@ -490,8 +488,7 @@ if __name__ == "__main__":
     
     # Initialize linear surrogate model
     surrogate = LinearSurrogateModel(
-        dataset_path=args.dataset_path,
-        predictions_path=args.predictions_path,
+        config=config,
         num_classes=args.num_classes,
         approach=args.approach,
         train_on_probs=args.train_on_probs,
@@ -522,7 +519,7 @@ if __name__ == "__main__":
     coef_df = surrogate.interpret_coefficients()
     
     # Save model
-    # surrogate.save(args.output_path)
+    surrogate.save(args.output_path)
     
     print(f"\nLinear surrogate model training complete!")
     print(f"Approach: {args.approach}")
