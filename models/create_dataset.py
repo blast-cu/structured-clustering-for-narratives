@@ -190,7 +190,8 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         data.append({
             'doc_id': doc_id,
             'text': doc['text'],
-            'cluster_feats': doc['structural_features'],  # Use structural features instead of frequencies
+            'cluster_feats': doc['structural_features'],  # Use structural features by default
+            'cluster_feats_frequency': doc['cluster_freq'],  # Keep original frequency features
             'role_feats': doc['role_freq_list'],
             'stance_feats': doc['stance_freq_list'],
             'frame_label': doc['frame_label']

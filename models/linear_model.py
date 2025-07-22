@@ -19,7 +19,7 @@ class LinearSurrogateModel:
     
     def __init__(self, config, num_classes=14, approach='one_vs_rest',
                  train_on_probs=True, use_cluster_feats=True, use_role_feats=True, 
-                 use_stance_feats=True, seed=42, n_trials=50):
+                 use_stance_feats=True, use_frequency_features=False, seed=42, n_trials=50):
         self.config = config
         self.model = None
         self.approach = approach
@@ -28,6 +28,7 @@ class LinearSurrogateModel:
         self.use_cluster_feats = use_cluster_feats
         self.use_role_feats = use_role_feats
         self.use_stance_feats = use_stance_feats
+        self.use_frequency_features = use_frequency_features
         self.n_trials = n_trials
         self.feature_names = None
         self.scaler = StandardScaler()
@@ -90,12 +91,24 @@ class LinearSurrogateModel:
         
         # Cluster features
         if self.use_cluster_feats:
-            cluster_feats = np.array(full_df['cluster_feats'].tolist())
-            features.append(cluster_feats)
-            if 'feature_names' in dataset:
-                feature_names.extend(dataset['feature_names'])
+            if self.use_frequency_features:
+                # Use original normalized frequency features
+                cluster_feats_raw = np.array(full_df['cluster_feats_frequency'].tolist())
+                # Normalize frequency features
+                frequency_scaler = StandardScaler()
+                cluster_feats = frequency_scaler.fit_transform(cluster_feats_raw)
+                feature_names.extend([f'cluster_freq_{i}' for i in range(cluster_feats.shape[1])])
+                print(f"Using frequency-based cluster features: {cluster_feats.shape[1]} clusters", flush=True)
             else:
-                feature_names.extend([f'cluster_{i}' for i in range(cluster_feats.shape[1])])
+                # Use structural features
+                cluster_feats = np.array(full_df['cluster_feats'].tolist())
+                if 'feature_names' in dataset:
+                    feature_names.extend(dataset['feature_names'])
+                else:
+                    feature_names.extend([f'cluster_{i}' for i in range(cluster_feats.shape[1])])
+                print(f"Using structural cluster features: {cluster_feats.shape[1]} features", flush=True)
+            
+            features.append(cluster_feats)
         
         # Role features  
         if self.use_role_feats:
@@ -476,6 +489,8 @@ if __name__ == "__main__":
                         help='Disable role features')
     parser.add_argument('--no-stance-feats', action='store_true',
                         help='Disable stance features')
+    parser.add_argument('--use-frequency-features', action='store_true',
+                        help='Use original normalized frequency counts instead of structural features')
     parser.add_argument('--output-path', default='models/linear_surrogate_model.pkl',
                         help='Output path for saved model (default: models/linear_surrogate_model.pkl)')
     
@@ -484,6 +499,7 @@ if __name__ == "__main__":
     
     print(f"Training approach: {args.approach}")
     print(f"Training target: {'probabilities' if args.train_on_probs else 'class labels'}")
+    print(f"Feature type: {'frequency counts' if args.use_frequency_features else 'structural features'}")
     print(f"Features: cluster={not args.no_cluster_feats}, role={not args.no_role_feats}, stance={not args.no_stance_feats}")
     
     # Initialize linear surrogate model
@@ -495,6 +511,7 @@ if __name__ == "__main__":
         use_cluster_feats=not args.no_cluster_feats,
         use_role_feats=not args.no_role_feats,
         use_stance_feats=not args.no_stance_feats,
+        use_frequency_features=args.use_frequency_features,
         seed=args.seed,
         n_trials=args.n_trials
     )
