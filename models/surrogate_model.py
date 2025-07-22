@@ -16,11 +16,12 @@ import optuna
 class SurrogateModel:
     """LightGBM-based surrogate model that approximates BERT using handcrafted features."""
     
-    def __init__(self, config):
+    def __init__(self, config, use_gold_labels=False):
         self.config = config
         self.model = None  # Single multi-class model
         self.num_classes = config['num_classes']
         self.feature_names = None
+        self.use_gold_labels = use_gold_labels
         
         # Check GPU availability
         self.device_type = self._check_gpu_availability()
@@ -134,6 +135,9 @@ class SurrogateModel:
         y_probs = np.array(all_probabilities)
         y_classes = np.array(all_predictions)  # Use BERT predictions as class labels
         
+        # Extract gold labels
+        y_gold_labels = np.array(full_df['frame_label_encoded'].tolist())
+        
         self.feature_names = feature_names
         
         # Split back into train/dev/test
@@ -151,6 +155,9 @@ class SurrogateModel:
             'y_train_classes': y_classes[train_mask],
             'y_dev_classes': y_classes[dev_mask],
             'y_test_classes': y_classes[test_mask],
+            'y_train_gold': y_gold_labels[train_mask],
+            'y_dev_gold': y_gold_labels[dev_mask],
+            'y_test_gold': y_gold_labels[test_mask],
             'splits': full_df[['split']].reset_index(drop=True)
         }
     
@@ -200,12 +207,20 @@ class SurrogateModel:
     
     def train(self, data):
         """Train single multi-class LightGBM model."""
-        print("Training surrogate model...", flush=True)
+        if self.use_gold_labels:
+            print("Training surrogate model on gold labels...", flush=True)
+        else:
+            print("Training surrogate model on BERT predictions...", flush=True)
         
         X_train = data['X_train']
-        y_train_classes = data['y_train_classes']  # Use BERT class predictions
         X_dev = data['X_dev']
-        y_dev_classes = data['y_dev_classes']
+        
+        if self.use_gold_labels:
+            y_train_classes = data['y_train_gold']
+            y_dev_classes = data['y_dev_gold']
+        else:
+            y_train_classes = data['y_train_classes']  # Use BERT class predictions
+            y_dev_classes = data['y_dev_classes']
         
         # Optimize hyperparameters
         best_params = self.optimize_hyperparameters(X_train, y_train_classes, X_dev, y_dev_classes)
@@ -270,18 +285,27 @@ class SurrogateModel:
         
         for split in ['train', 'dev', 'test']:
             X = data[f'X_{split}']
-            y_true_probs = data[f'y_{split}_probs']  # BERT probabilities
-            y_true_classes = data[f'y_{split}_classes']  # BERT predictions
+            
+            # Use appropriate ground truth based on training mode
+            if self.use_gold_labels:
+                y_true_classes = data[f'y_{split}_gold']
+                # For gold labels, use BERT probs as reference for prob metrics
+                y_true_probs = data[f'y_{split}_probs']
+                print(f"{split.upper()} - Comparing against gold labels")
+            else:
+                y_true_probs = data[f'y_{split}_probs']  # BERT probabilities
+                y_true_classes = data[f'y_{split}_classes']  # BERT predictions
+                print(f"{split.upper()} - Comparing against BERT predictions")
             
             # Predict with surrogate model
             y_pred_probs = self.predict_probabilities(X)
             y_pred_classes = self.predict_classes(X)
             
-            # Classification metrics (comparing predicted vs BERT classes)
+            # Classification metrics
             acc = accuracy_score(y_true_classes, y_pred_classes)
             f1 = f1_score(y_true_classes, y_pred_classes, average='weighted')
             
-            # Probability distribution similarity metrics
+            # Probability distribution similarity metrics (always vs BERT probs)
             prob_mse = mean_squared_error(y_true_probs.flatten(), y_pred_probs.flatten())
             prob_r2 = r2_score(y_true_probs.flatten(), y_pred_probs.flatten())
             
@@ -346,12 +370,19 @@ class SurrogateModel:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Train Surrogate Model')
     parser.add_argument('-c', metavar='CONF', default='base', help='configuration (see config.conf)')
+    parser.add_argument('--use-gold-labels', action='store_true',
+                        help='Train on gold labels instead of BERT predictions')
     
     args = parser.parse_args()
     config = ConfigFactory.parse_file('./config.conf')[args.c]
     
+    if args.use_gold_labels:
+        print("Training target: gold labels")
+    else:
+        print("Training target: BERT predictions")
+    
     # Initialize surrogate model
-    surrogate = SurrogateModel(config)
+    surrogate = SurrogateModel(config, use_gold_labels=args.use_gold_labels)
     
     # Load data
     dataset, bert_outputs = surrogate.load_data()
