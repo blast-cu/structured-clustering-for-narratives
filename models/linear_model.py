@@ -361,8 +361,15 @@ class LinearSurrogateModel:
         
         for split in ['train', 'dev', 'test']:
             X = data[f'X_{split}']
-            y_true_probs = data[f'y_{split}_probs']
-            y_true_classes = data[f'y_{split}_classes']
+            
+            # Use appropriate ground truth based on training mode
+            if self.use_gold_labels:
+                y_true_classes = data[f'y_{split}_gold']
+                # For gold labels, use BERT probs as reference for prob metrics
+                y_true_probs = data[f'y_{split}_probs']
+            else:
+                y_true_probs = data[f'y_{split}_probs']
+                y_true_classes = data[f'y_{split}_classes']
             
             # Predict with surrogate model
             y_pred_probs = self.predict_probabilities(X)
