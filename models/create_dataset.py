@@ -10,6 +10,8 @@ from pyhocon import ConfigFactory
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.feature_selection import SelectKBest, f_classif
+from collections import Counter
+from scipy import stats
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -19,6 +21,64 @@ if project_root not in sys.path:
 # Import the schemas module and create an alias for pickle compatibility
 import annotation.schemas as schemas
 sys.modules['schemas'] = schemas
+
+
+def create_structural_cluster_features(clusters, chain_strengths, total_clusters):
+    """Create structural narrative features from cluster assignments.
+    
+    Args:
+        clusters: List of cluster IDs for chains in document
+        chain_strengths: List of chain strengths (number of roles/entities)
+        total_clusters: Total number of possible clusters
+        
+    Returns:
+        List of structural features
+    """
+    if not clusters:
+        return [0] * 8  # Return zeros if no clusters
+    
+    cluster_counts = Counter(clusters)
+    unique_clusters = len(cluster_counts)
+    total_chains = len(clusters)
+    
+    # 1. Dominant cluster ID (most frequent cluster)
+    dominant_cluster = cluster_counts.most_common(1)[0][0]
+    
+    # 2. Cluster diversity (Shannon entropy)
+    if total_chains == 1:
+        cluster_diversity = 0
+    else:
+        probs = np.array(list(cluster_counts.values())) / total_chains
+        cluster_diversity = -np.sum(probs * np.log2(probs + 1e-10))  # Add small epsilon
+    
+    # 3. Narrative strength (average chain strength)
+    narrative_strength = np.mean(chain_strengths) if chain_strengths else 0
+    
+    # 4. Narrative coverage (ratio of unique clusters to total chains)
+    narrative_coverage = unique_clusters / total_chains
+    
+    # 5. Cluster concentration (max cluster frequency / total chains)
+    cluster_concentration = max(cluster_counts.values()) / total_chains
+    
+    # 6. Max cluster strength (strength of strongest narrative)
+    max_cluster_strength = max(chain_strengths) if chain_strengths else 0
+    
+    # 7. Average cluster strength (same as narrative_strength for consistency)
+    avg_cluster_strength = narrative_strength
+    
+    # 8. Cluster entropy (normalized)
+    cluster_entropy = cluster_diversity / np.log2(min(unique_clusters, 2))  # Normalize by max possible entropy
+    
+    return [
+        dominant_cluster,
+        cluster_diversity, 
+        narrative_strength,
+        narrative_coverage,
+        cluster_concentration,
+        max_cluster_strength,
+        avg_cluster_strength,
+        cluster_entropy
+    ]
 
 
 def create_dataset(config, clustering_data, processed_chains, corpus):
@@ -35,9 +95,7 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
     """
     print("Creating dataset...", flush=True)
     
-    # Configuration for dimensionality reduction
-    max_cluster_features = config.get('max_cluster_features', 50)  # Reduce from ~200 to 50
-    print(f"Reducing cluster features to top {max_cluster_features}...", flush=True)
+    print("Creating structural narrative features instead of frequency counts...", flush=True)
 
     immig_roles = {
         "Immigrants:Hero": 0,
@@ -72,18 +130,24 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         if doc_id not in doc_to_clusters:
             doc_to_clusters[doc_id] = {
                 'chains': [],
-                'clusters': set(),
+                'clusters': [],  # Changed from set to list to preserve order
                 'cluster_freq': [0] * config['num_clusters'],
                 'role_freq': immig_roles.copy(),
                 'stance_freq': stance.copy(),
                 'chain_to_cluster': {},
                 'text': corpus[doc_id]['text'],
-                'frame_label': corpus[doc_id]['primary_frame']
+                'frame_label': corpus[doc_id]['primary_frame'],
+                'chain_strengths': []  # To track narrative strength
             }
         doc_to_clusters[doc_id]['chains'].append([chain_idx])
-        doc_to_clusters[doc_id]['clusters'].add(clustering_data['labels'][chain_idx])
-        doc_to_clusters[doc_id]['cluster_freq'][clustering_data['labels'][chain_idx]] += 1
-        doc_to_clusters[doc_id]['chain_to_cluster'][chain_idx] = clustering_data['labels'][chain_idx]
+        cluster_id = clustering_data['labels'][chain_idx]
+        doc_to_clusters[doc_id]['clusters'].append(cluster_id)
+        doc_to_clusters[doc_id]['cluster_freq'][cluster_id] += 1
+        doc_to_clusters[doc_id]['chain_to_cluster'][chain_idx] = cluster_id
+        
+        # Calculate chain strength (number of roles/entities in this chain)
+        chain_strength = len(processed_chains['chain_group_roles'][chain_idx])
+        doc_to_clusters[doc_id]['chain_strengths'].append(chain_strength)
 
         chain_group_roles = processed_chains['chain_group_roles'][chain_idx]
         for char, role in chain_group_roles.items():
@@ -93,16 +157,25 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
             if key in doc_to_clusters[doc_id]['stance_freq']:
                 doc_to_clusters[doc_id]['stance_freq'][key] += 1
 
-        # generate a list using values of the role_stance_freq dictionary
-        doc_to_clusters[doc_id]['role_freq_list'] = list(doc_to_clusters[doc_id]['role_freq'].values())
-        doc_to_clusters[doc_id]['stance_freq_list'] = list(doc_to_clusters[doc_id]['stance_freq'].values())
+    # Generate structural narrative features for each document
+    for doc_id in doc_to_clusters:
+        doc = doc_to_clusters[doc_id]
+        clusters = doc['clusters']
+        strengths = doc['chain_strengths']
+        
+        # Create structural features
+        doc['structural_features'] = create_structural_cluster_features(clusters, strengths, config['num_clusters'])
+        
+        # generate a list using values of the role_stance_freq dictionary  
+        doc['role_freq_list'] = list(doc['role_freq'].values())
+        doc['stance_freq_list'] = list(doc['stance_freq'].values())
 
     data = []
     for doc_id, doc in doc_to_clusters.items():
         data.append({
             'doc_id': doc_id,
             'text': doc['text'],
-            'cluster_feats': doc['cluster_freq'],
+            'cluster_feats': doc['structural_features'],  # Use structural features instead of frequencies
             'role_feats': doc['role_freq_list'],
             'stance_feats': doc['stance_freq_list'],
             'frame_label': doc['frame_label']
@@ -110,20 +183,11 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
     
     df = pd.DataFrame(data)
     
-    # Apply dimensionality reduction to cluster features
+    # Use structural features (no dimensionality reduction needed - already compact)
     cluster_feats_array = np.array(df['cluster_feats'].tolist())
+    print(f"Structural cluster features shape: {cluster_feats_array.shape}")
     
-    # Method 1: Keep top K most frequent clusters across all documents
-    print("Analyzing cluster frequencies...", flush=True)
-    cluster_totals = np.sum(cluster_feats_array, axis=0)
-    top_cluster_indices = np.argsort(cluster_totals)[-max_cluster_features:][::-1]  # Top K, sorted by frequency
-    
-    print(f"Original cluster features: {cluster_feats_array.shape[1]}")
-    print(f"Reduced to top {len(top_cluster_indices)} most frequent clusters")
-    print(f"Top 10 cluster frequencies: {cluster_totals[top_cluster_indices[:10]]}")
-    
-    # Keep only top clusters
-    cluster_feats_reduced = cluster_feats_array[:, top_cluster_indices]
+    cluster_feats_reduced = cluster_feats_array  # No reduction needed
     
     # Normalize cluster_feats and role_stance_feats using StandardScaler
     cluster_scaler = StandardScaler()
@@ -162,9 +226,10 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         'label_encoder': label_encoder,
         'cluster_scaler': cluster_scaler,
         'role_stance_scaler': role_stance_scaler,
-        'top_cluster_indices': top_cluster_indices,  # Store for future reference
-        'original_num_clusters': cluster_feats_array.shape[1],
-        'reduced_num_clusters': len(top_cluster_indices)
+        'feature_names': ['dominant_cluster', 'cluster_diversity', 'narrative_strength', 
+                         'narrative_coverage', 'cluster_concentration', 'max_cluster_strength',
+                         'avg_cluster_strength', 'cluster_entropy'],
+        'num_structural_features': cluster_feats_array.shape[1]
     }
     
     return dataset
