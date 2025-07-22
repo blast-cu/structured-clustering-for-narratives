@@ -369,6 +369,7 @@ class NeuralNetTrainer:
             
             # Average absolute SHAP values for this class
             class_shap_values = np.abs(shap_values[class_idx]).mean(axis=0)
+            print(f"Debug - Class {class_idx} SHAP shape: {class_shap_values.shape}")
             
             # Get top 10 cluster features
             cluster_shap = class_shap_values[:cluster_end]
