@@ -9,9 +9,7 @@ import pandas as pd
 from pyhocon import ConfigFactory
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.feature_selection import SelectKBest, f_classif
 from collections import Counter
-from scipy import stats
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -209,7 +207,15 @@ def create_dataset(config, clustering_data, processed_chains, corpus, config_nam
         doc['role_freq_list'] = list(doc['role_freq'].values())
         doc['stance_freq_list'] = list(doc['stance_freq'].values())
 
+    # Debug: Print all unique frame labels before filtering
+    all_labels = set()
+    for doc_id, doc in doc_to_clusters.items():
+        all_labels.add(doc['frame_label'])
+    print(f"All unique frame labels: {sorted(all_labels)}", flush=True)
+    print(f"Config name: {config_name}", flush=True)
+    
     data = []
+    filtered_count = 0
     for doc_id, doc in doc_to_clusters.items():
         # Filter out specific labels for mfc_guncontrol configuration
         if config_name == 'mfc_guncontrol':
@@ -217,6 +223,7 @@ def create_dataset(config, clustering_data, processed_chains, corpus, config_nam
                                     "Fairness and Equality primary", 
                                     "Morality primary", 
                                     "Quality of Life primary"]:
+                filtered_count += 1
                 continue
         
         data.append({
@@ -228,6 +235,9 @@ def create_dataset(config, clustering_data, processed_chains, corpus, config_nam
             'stance_feats': doc['stance_freq_list'],
             'frame_label': doc['frame_label']
         })
+    
+    print(f"Filtered out {filtered_count} documents", flush=True)
+    print(f"Remaining documents: {len(data)}", flush=True)
     
     df = pd.DataFrame(data)
     
