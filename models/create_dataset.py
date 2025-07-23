@@ -96,7 +96,7 @@ def create_structural_cluster_features(clusters, chain_strengths, total_clusters
     return features
 
 
-def create_dataset(config, clustering_data, processed_chains, corpus):
+def create_dataset(config, clustering_data, processed_chains, corpus, config_name=None):
     """Create dataset for BERT training from clustering data and processed chains.
     
     Args:
@@ -131,6 +131,30 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
         "Politicians:Hero": 0,
         "Politicians:Threat": 0,
         "Politicians:Victim": 0
+    }
+
+    guncontrol_roles = {
+        "Government:Hero": 0,
+        "Government:Threat": 0,
+        "Government:Victim": 0,
+        "Gun Control Advocates:Hero": 0,
+        "Gun Control Advocates:Threat": 0,
+        "Gun Control Advocates:Victim": 0,
+        "Gun Rights Advocates:Hero": 0,
+        "Gun Rights Advocates:Threat": 0,
+        "Gun Rights Advocates:Victim": 0,
+        "Judiciary:Hero": 0,
+        "Judiciary:Threat": 0,
+        "Judiciary:Victim": 0,
+        "Law Enforcement:Hero": 0,
+        "Law Enforcement:Threat": 0,
+        "Law Enforcement:Victim": 0,
+        "Politicians:Hero": 0,
+        "Politicians:Threat": 0,
+        "Politicians:Victim": 0,
+        "Gun Crime Victims:Hero": 0,
+        "Gun Crime Victims:Threat": 0,
+        "Gun Crime Victims:Victim": 0
     }
 
     stance = {
@@ -187,6 +211,14 @@ def create_dataset(config, clustering_data, processed_chains, corpus):
 
     data = []
     for doc_id, doc in doc_to_clusters.items():
+        # Filter out specific labels for mfc_guncontrol configuration
+        if config_name == 'mfc_guncontrol':
+            if doc['frame_label'] in ["Capacity and Resources primary", 
+                                    "Fairness and Equality primary", 
+                                    "Morality primary", 
+                                    "Quality of Life primary"]:
+                continue
+        
         data.append({
             'doc_id': doc_id,
             'text': doc['text'],
@@ -280,7 +312,7 @@ if __name__ == "__main__":
     np.random.seed(seed)
 
     # Create dataset
-    dataset = create_dataset(config, clustering_data, processed_chains, corpus)
+    dataset = create_dataset(config, clustering_data, processed_chains, corpus, args.c)
     
     # Save dataset to disk
     print("Saving dataset to disk...", flush=True)

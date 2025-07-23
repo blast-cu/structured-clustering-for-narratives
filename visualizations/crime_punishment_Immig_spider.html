@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crime and Punishment Frame Analysis</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 30px 40px;
+            background-color: #ffffff;
+            color: #333;
+            line-height: 1.4;
+        }
+        
+        .container {
+            max-width: 850px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 0px;
+        }
+        
+        .title {
+            font-size: 28px;
+            font-weight: 600;
+            color: #1a1a1a;
+            margin-bottom: 0px;
+            letter-spacing: -0.5px;
+        }
+        
+        .subtitle {
+            font-size: 16px;
+            color: #666;
+            font-weight: 400;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+        
+        .chart-container {
+            margin: 0px 0;
+            background: #ffffff;
+            display: flex;
+            justify-content: center;
+        }
+        
+        .axis-label {
+            font-size: 14px;
+            font-weight: 500;
+            fill: #333;
+        }
+        
+        .grid-line {
+            stroke: #e0e0e0;
+            stroke-width: 1;
+            fill: none;
+        }
+        
+        .data-line {
+            stroke: #666;
+            stroke-width: 2;
+            fill: rgba(102, 102, 102, 0.05);
+            stroke-linejoin: round;
+        }
+        
+        .data-point {
+            stroke: #fff;
+            stroke-width: 2;
+        }
+        
+        .legend {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 8px;
+        }
+        
+        .axis-line {
+            stroke: #ccc;
+            stroke-width: 1;
+        }
+        
+        .key-insights {
+            margin-top: 10px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-left: 3px solid #666;
+            border-radius: 0 4px 4px 0;
+        }
+        
+        .insights-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .insights-list {
+            font-size: 13px;
+            color: #555;
+            line-height: 1.5;
+        }
+        
+        .source-note {
+            font-size: 12px;
+            color: #999;
+            text-align: center;
+            margin-top: 15px;
+            font-style: italic;
+        }
+        
+        .role-description {
+            margin-top: 5px;
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+            max-width: 500px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 class="title">Crime and Punishment Frame: Immigration News</h1>
+            <p class="subtitle">Most important narrative themes and character portrayals (SHAP values × 1000)</p>
+        </div>
+        
+        <div class="chart-container">
+            <svg id="spider-chart"></svg>
+        </div>
+        
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #3498db;"></div>
+                <span>Narrative Themes</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background-color: #e74c3c;"></div>
+                <span>Character Portrayals</span>
+            </div>
+            <!-- <div class="legend-item">
+                <div class="legend-color" style="background-color: #9b59b6;"></div>
+                <span>Stance</span>
+            </div> -->
+        </div>
+        
+        <div class="role-description">
+            Immigration enforcement themes dominate, with immigrants primarily portrayed as threats (15.0) vs. heroes (3.9) - nearly 4x difference
+        </div>
+
+        <!-- Crime and Punishment frames are dominated by immigration enforcement narratives, with authority conflicts and fraud victimization schemes as the central themes, while immigrants are primarily portrayed as threats with government consistently appearing as antagonistic, and immigrants occasionally cast as heroes in victimization scenarios. -->
+        
+        <!-- <div class="key-insights">
+            <div class="insights-title">Frame Characteristics</div>
+            <div class="insights-list">
+                <strong>Immigration-Focused:</strong> All narrative themes center on enforcement conflicts, fraud schemes, and legal battles<br>
+                <strong>Threat-Dominant:</strong> Immigrants primarily cast as threats (0.0150) vs. heroes (0.0039) - nearly 4x difference<br>
+                <strong>Anti-Government:</strong> Government consistently portrayed as threat across immigration enforcement stories
+            </div>
+        </div>
+        
+        <div class="source-note">
+            Source: SHAP analysis of media frame classification model | Based on narrative event chain features
+        </div> -->
+    </div>
+
+    <script>
+        // Data for Crime and Punishment frame (Class 1) - SHAP values scaled by 1000
+        const data = [
+            { feature: "Conflict between Immigrants\nand Enforcement Authorities", value: 17.6, type: "cluster", angle: 0 },
+            { feature: "Immigrant Fraud\nVictimization Schemes", value: 17.6, type: "cluster", angle: 1 },
+            { feature: "Enforcement \nActions Create \nFear", value: 9.7, type: "cluster", angle: 2 },
+            { feature: "Immigration Legal\nBattle Narratives", value: 8.6, type: "cluster", angle: 3 },
+            { feature: "Deportation Creates\nImmigrant Hardships", value: 4.7, type: "cluster", angle: 4 },
+            { feature: "Immigrants as\nThreats", value: 15.0, type: "role", angle: 5 },
+            { feature: "Immigrants as\nHeroes", value: 3.9, type: "role", angle: 6 },
+            { feature: "Government as\nThreat", value: 3.5, type: "role", angle: 7 }
+        ];
+
+        // Set up dimensions
+        const width = 650;
+        const height = 650;
+        const margin = 150;
+        const radius = Math.min(width, height) / 2 - margin;
+
+        // Create SVG
+        const svg = d3.select("#spider-chart")
+            .attr("width", width)
+            .attr("height", height);
+
+        const g = svg.append("g")
+            .attr("transform", `translate(${width/2},${height/2})`);
+
+        // Color scale for feature types
+        const colorScale = d3.scaleOrdinal()
+            .domain(["cluster", "role", "stance"])
+            .range(["#3498db", "#e74c3c", "#9b59b6"]);
+
+        // Scales
+        const maxValue = d3.max(data, d => d.value);
+        const rScale = d3.scaleLinear()
+            .domain([0, maxValue])
+            .range([0, radius]);
+
+        const angleScale = d3.scaleLinear()
+            .domain([0, data.length])
+            .range([0, 2 * Math.PI]);
+
+        // Create grid circles
+        const gridLevels = 5;
+        for (let i = 1; i <= gridLevels; i++) {
+            g.append("circle")
+                .attr("r", radius * i / gridLevels)
+                .attr("class", "grid-line");
+        }
+
+        // Create axis lines and labels
+        data.forEach((d, i) => {
+            const angle = angleScale(i) - Math.PI / 2; // Start from top
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            
+            // Axis line
+            g.append("line")
+                .attr("x1", 0)
+                .attr("y1", 0)
+                .attr("x2", x)
+                .attr("y2", y)
+                .attr("class", "axis-line");
+            
+            // Axis label
+            const labelDistance = radius + 50;
+            const labelX = Math.cos(angle) * labelDistance;
+            const labelY = Math.sin(angle) * labelDistance;
+            
+            const textElement = g.append("text")
+                .attr("x", labelX)
+                .attr("y", labelY)
+                .attr("text-anchor", 
+                    labelX > 10 ? "start" : 
+                    labelX < -10 ? "end" : "middle")
+                .attr("class", "axis-label")
+                .style("fill", colorScale(d.type));
+            
+            // Handle multi-line text
+            const lines = d.feature.split('\n');
+            lines.forEach((line, lineIndex) => {
+                textElement.append("tspan")
+                    .attr("x", labelX)
+                    .attr("dy", lineIndex === 0 ? "0.35em" : "1.2em")
+                    .text(line);
+            });
+        });
+
+        // Create the data polygon
+        const lineGenerator = d3.line()
+            .x(d => {
+                const angle = angleScale(d.angle) - Math.PI / 2;
+                return Math.cos(angle) * rScale(d.value);
+            })
+            .y(d => {
+                const angle = angleScale(d.angle) - Math.PI / 2;
+                return Math.sin(angle) * rScale(d.value);
+            })
+            .curve(d3.curveLinearClosed);
+
+        g.append("path")
+            .datum(data)
+            .attr("d", lineGenerator)
+            .attr("class", "data-line");
+
+        // Add data points
+        g.selectAll(".data-point")
+            .data(data)
+            .enter()
+            .append("circle")
+            .attr("class", "data-point")
+            .attr("cx", d => {
+                const angle = angleScale(d.angle) - Math.PI / 2;
+                return Math.cos(angle) * rScale(d.value);
+            })
+            .attr("cy", d => {
+                const angle = angleScale(d.angle) - Math.PI / 2;
+                return Math.sin(angle) * rScale(d.value);
+            })
+            .attr("r", d => d.value === maxValue ? 6 : 4)
+            .attr("fill", d => colorScale(d.type));
+
+        // Add grid value labels
+        for (let i = 1; i <= gridLevels; i++) {
+            const gridValue = (maxValue * i / gridLevels).toFixed(1);
+            g.append("text")
+                .attr("x", 5)
+                .attr("y", -radius * i / gridLevels)
+                .attr("dy", "0.35em")
+                .style("font-size", "10px")
+                .style("fill", "#999")
+                .text(gridValue);
+        }
+
+    </script>
+</body>
+</html>
