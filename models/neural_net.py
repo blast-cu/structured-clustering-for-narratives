@@ -282,35 +282,51 @@ class NeuralNetTrainer:
         
         self.model.eval()
         
-        # Collect dev + test data for SHAP analysis (avoid training data to prevent overfitting)
-        all_cluster_feats = []
-        all_role_feats = []
-        all_stance_feats = []
-        all_labels = []
+        # Collect training data for SHAP background
+        train_cluster_feats = []
+        train_role_feats = []
+        train_stance_feats = []
         
-        # Use dev and test sets for unbiased analysis
+        with torch.no_grad():
+            for cluster_feats, role_feats, stance_feats, labels in train_dataloader:
+                train_cluster_feats.append(cluster_feats)
+                train_role_feats.append(role_feats)
+                train_stance_feats.append(stance_feats)
+        
+        # Combine training data for background
+        background_cluster = torch.cat(train_cluster_feats, dim=0).to(self.device)
+        background_role = torch.cat(train_role_feats, dim=0).to(self.device)
+        background_stance = torch.cat(train_stance_feats, dim=0).to(self.device)
+        
+        print(f"Using {background_cluster.shape[0]} training samples as SHAP background")
+        
+        # Collect dev + test data for SHAP analysis
+        eval_cluster_feats = []
+        eval_role_feats = []
+        eval_stance_feats = []
+        eval_labels = []
+        
+        # Use dev and test sets for analysis
         eval_dataloaders = [dev_dataloader, test_dataloader]
         
         with torch.no_grad():
             for dataloader in eval_dataloaders:
                 for cluster_feats, role_feats, stance_feats, labels in dataloader:
-                    all_cluster_feats.append(cluster_feats)
-                    all_role_feats.append(role_feats)
-                    all_stance_feats.append(stance_feats)
-                    all_labels.extend(labels.numpy())
+                    eval_cluster_feats.append(cluster_feats)
+                    eval_role_feats.append(role_feats)
+                    eval_stance_feats.append(stance_feats)
+                    eval_labels.extend(labels.numpy())
         
-        print(f"Using {len(all_labels)} samples from dev + test sets for SHAP analysis")
+        print(f"Using {len(eval_labels)} samples from dev + test sets for SHAP analysis")
         
-        # Combine all data
-        sample_cluster = torch.cat(all_cluster_feats, dim=0).to(self.device)
-        sample_role = torch.cat(all_role_feats, dim=0).to(self.device)
-        sample_stance = torch.cat(all_stance_feats, dim=0).to(self.device)
-        all_labels = np.array(all_labels)
+        # Combine eval data for SHAP analysis
+        sample_cluster = torch.cat(eval_cluster_feats, dim=0).to(self.device)
+        sample_role = torch.cat(eval_role_feats, dim=0).to(self.device)
+        sample_stance = torch.cat(eval_stance_feats, dim=0).to(self.device)
+        eval_labels = np.array(eval_labels)
         
-        # Use first batch as background for efficiency
-        background_data = [all_cluster_feats[0][:32].to(self.device), 
-                          all_role_feats[0][:32].to(self.device), 
-                          all_stance_feats[0][:32].to(self.device)]
+        # Use entire training set as background
+        background_data = [background_cluster, background_role, background_stance]
         
         # Define wrapper function for SHAP
         def model_wrapper(combined_features):
@@ -339,8 +355,8 @@ class NeuralNetTrainer:
         background_combined = torch.cat(background_data, dim=1).cpu().numpy()
         sample_combined = torch.cat([sample_cluster, sample_role, sample_stance], dim=1).cpu().numpy()
         
-        # Create SHAP explainer
-        explainer = shap.KernelExplainer(model_wrapper, background_combined[:50])  # Use subset for efficiency
+        # Create SHAP explainer using entire training set as background
+        explainer = shap.KernelExplainer(model_wrapper, background_combined)
         
         # Calculate SHAP values for ALL samples
         print(f"Computing SHAP values for {sample_combined.shape[0]} samples (this may take several minutes)...", flush=True)
@@ -444,18 +460,18 @@ class NeuralNetTrainer:
         all_predictions = np.argmax(all_probs, axis=1)
         
         # Find correct and incorrect prediction indices
-        correct_indices = np.where(all_predictions == all_labels)[0]
-        incorrect_indices = np.where(all_predictions != all_labels)[0]
+        correct_indices = np.where(all_predictions == eval_labels)[0]
+        incorrect_indices = np.where(all_predictions != eval_labels)[0]
         
         print(f"\nDataset Summary:")
-        print(f"  Total samples: {len(all_labels)}")
-        print(f"  Correct predictions: {len(correct_indices)} ({len(correct_indices)/len(all_labels)*100:.1f}%)")
-        print(f"  Incorrect predictions: {len(incorrect_indices)} ({len(incorrect_indices)/len(all_labels)*100:.1f}%)")
+        print(f"  Total samples: {len(eval_labels)}")
+        print(f"  Correct predictions: {len(correct_indices)} ({len(correct_indices)/len(eval_labels)*100:.1f}%)")
+        print(f"  Incorrect predictions: {len(incorrect_indices)} ({len(incorrect_indices)/len(eval_labels)*100:.1f}%)")
         
         # Show 3 correct predictions
         print(f"\n--- CORRECT PREDICTIONS (3 examples) ---")
         for i, sample_idx in enumerate(correct_indices[:3]):
-            true_class = all_labels[sample_idx]
+            true_class = eval_labels[sample_idx]
             predicted_class = all_predictions[sample_idx]
             true_class_name = label_encoder.classes_[true_class]
             confidence = all_probs[sample_idx, predicted_class]
@@ -478,7 +494,7 @@ class NeuralNetTrainer:
         if len(incorrect_indices) > 0:
             print(f"\n--- INCORRECT PREDICTIONS (3 examples) ---")
             for i, sample_idx in enumerate(incorrect_indices[:3]):
-                true_class = all_labels[sample_idx]
+                true_class = eval_labels[sample_idx]
                 predicted_class = all_predictions[sample_idx]
                 true_class_name = label_encoder.classes_[true_class]
                 predicted_class_name = label_encoder.classes_[predicted_class]
