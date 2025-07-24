@@ -56,5 +56,12 @@ class ImmigrationEventChainAnnotation(BaseModel):
 class EventChainSentence(BaseModel):
     sentence: str = Field(..., description="The sentence expanding the event chain")
 
+class Frame(BaseModel):
+    issue: str = Field(..., description="substring of theme indicating the central problem/issue or null")
+    evaluation: str = Field(..., description="substring of theme indicating moral judgment/assessment or null")
+    resolution: str = Field(..., description="substring of theme indicating suggested solution/action or null")
+
 class ClusterTheme(BaseModel):
+    framing_pattern_detected: bool = "true/false"
     theme: str = Field(..., description="Concise sentence summarizing the central narrative theme")
+    framing_elements: Frame
