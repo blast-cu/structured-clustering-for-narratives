@@ -4,18 +4,21 @@ You are a computational social scientist specializing in extracting high-level n
 
 ## Instructions
 
-1. Analyze the provided sentences to identify the central narrative theme 
-2. **Assess for Framing Patterns**: Examine whether the cluster exhibits Entman's framing elements:
-   - **Issue/Problem**: A central problem or issue being defined
-   - **Evaluation**: Moral judgments or value assessments about causes, effects, or actors (positive/negative evaluations)
-   - **Resolution/Solution**: Suggested remedies, courses of action, or treatment recommendations
-3. Consider how the character roles interact within this narrative framework 
-4. **Theme Construction**:
-   - If framing patterns are detected: Generate ONE concise sentence (15-25 words) that incorporates the central issue and ideally includes either or both evaluation and resolution elements
-   - If no clear framing patterns: Generate a standard narrative theme focusing on relationship dynamics, conflict, causation, or resolution patterns
-5. Include specific events, actions, or circumstances that recur across the sentences to ground your summary in concrete details
-6. Ensure your narrative summary reflects the specific domain context provided 
-7. Output your response as valid JSON in the specified format
+1. Analyze the provided sentences to identify the central narrative theme
+2. Consider how the character roles interact within this narrative framework
+3. **Conservative Framing Assessment**: Only after constructing your theme, examine whether the cluster exhibits **clear and explicit** Entman's framing elements:
+   - **Issue/Problem**: A specific, well-defined problem that is explicitly articulated (not just implied)
+   - **Evaluation**: Clear moral judgments or strong value assessments about causes, effects, or actors (must be unambiguous positive/negative evaluations) of the issue
+   - **Resolution/Solution**: Explicit suggestions for remedies, courses of action, or treatment recommendations (not just general implications) for actors involved in the issue
+4. **Important**: Only detect framing patterns when these elements are **prominently and explicitly present** in the cluster sentences. Subtle implications, vague suggestions, or weak patterns should NOT trigger framing detection.
+5. **Theme Construction**:
+   - Generate ONE concise sentence (15-25 words) that captures the overarching narrative theme
+   - Include specific events, actions, or circumstances that recur across the sentences
+   - Focus on relationship dynamics, conflict, causation, or resolution patterns
+   - If clear framing patterns exist, ensure the theme incorporates the central issue and relevant evaluation/resolution elements
+6. **Framing Elements Identification**: If framing patterns are detected, identify the exact substrings from your generated theme sentence that correspond to each framing element. Do not paraphrase or create new text - only use exact portions of the theme sentence. **Overlapping substrings between issue, evaluation, and resolution are permitted when necessary** (e.g., when evaluative language is embedded within the issue description or when resolution language overlaps with evaluation).
+7. Ensure your narrative summary reflects the specific domain context provided
+8. Output your response as valid JSON in the specified format
 
 ## Input Format
 
@@ -29,12 +32,12 @@ Provide your analysis in this JSON format:
 
 ```json
 {
-  "framing_pattern_detected": "true/false",
+  "framing_pattern_detected": false,
   "theme": "[Concise sentence summarizing the central narrative theme.]",
   "framing_elements": {
-    "issue": "[substring of theme indicating the central problem/issue] or null",
-    "evaluation": "[substring of theme indicating moral judgment/assessment] or null",
-    "resolution": "[substring of theme indicating suggested solution/action] or null"
+    "issue": null,
+    "evaluation": null,
+    "resolution": null
   }
 }
 ```

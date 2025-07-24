@@ -291,7 +291,7 @@ class ClusterAnalyzer:
                 try:
                     response = ClusterTheme.model_validate_json(structured_response)
                     response = response.model_dump()
-                    return response['theme']
+                    return response
                 except Exception as e:
                     print("Exception: " + str(e), flush=True)
                     print("Invalid response. Please try again.", flush=True)

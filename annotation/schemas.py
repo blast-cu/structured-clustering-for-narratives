@@ -62,6 +62,6 @@ class Frame(BaseModel):
     resolution: str = Field(..., description="substring of theme indicating suggested solution/action or null")
 
 class ClusterTheme(BaseModel):
-    framing_pattern_detected: bool = "true/false"
+    framing_pattern_detected: bool
     theme: str = Field(..., description="Concise sentence summarizing the central narrative theme")
     framing_elements: Frame
