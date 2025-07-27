@@ -441,14 +441,13 @@ class Trainer:
         print(f"Target text preview: {target_text[:200]}...")
         print(f"True label: {true_label}")
         
-        # Create wrapper function for SHAP
-        def predict_wrapper(texts):
-            """Wrapper that takes raw text and returns logits for target class"""
+        # Create prediction function similar to the SHAP example
+        def predict_function(texts):
+            """Prediction function that takes raw text and returns logits for target class"""
             model.eval()
             with torch.no_grad():
                 if self.config['use_cluster_feats'] or self.config['use_all_feats']:
-                    # For feature-based models, we need to handle features
-                    # For now, use average features from training set as baseline
+                    # For feature-based models, use average features from training set as baseline
                     if self.config['use_cluster_feats']:
                         baseline_feats = torch.tensor(train_df['cluster_feats'].tolist(), dtype=torch.float32).mean(dim=0, keepdim=True)
                         baseline_feats = baseline_feats.repeat(len(texts), 1).to(self.device)
@@ -463,21 +462,21 @@ class Trainer:
                 else:
                     logits = model(texts, None)
                 
-                # Determine target class
+                # Get probabilities using softmax
+                probabilities = torch.softmax(logits, dim=1)
+                
+                # Determine target class for explanation
                 if target_class is None:
                     pred_class = torch.argmax(logits, dim=1)[0].item()
                 else:
                     pred_class = target_class
                 
+                # Return logits for the target class (following SHAP example pattern)
                 return logits[:, pred_class].cpu().numpy()
         
-        # Get background data (sample from training set)
-        background_texts = train_df['text'].sample(min(50, len(train_df)), random_state=42).tolist()
-        
-        # Create explainer with text masker
+        # Create explainer using tokenizer as masker (following SHAP example)
         print("Creating SHAP explainer...", flush=True)
-        masker = shap.maskers.Text(self.model.tokenizer)
-        explainer = shap.Explainer(predict_wrapper, masker)
+        explainer = shap.Explainer(predict_function, self.model.tokenizer)
         
         # Generate explanations
         print("Generating SHAP explanations...", flush=True)
