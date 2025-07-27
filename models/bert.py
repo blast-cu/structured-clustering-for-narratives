@@ -446,6 +446,19 @@ class Trainer:
             """Prediction function that takes raw text and returns logits for target class"""
             model.eval()
             with torch.no_grad():
+                # Handle different input types that SHAP might pass
+                if isinstance(texts, str):
+                    texts = [texts]
+                elif not isinstance(texts, list):
+                    # Convert other types to list of strings
+                    if hasattr(texts, '__iter__'):
+                        texts = [str(t) for t in texts]
+                    else:
+                        texts = [str(texts)]
+                
+                # Ensure all elements are strings
+                texts = [str(t) if not isinstance(t, str) else t for t in texts]
+                
                 if self.config['use_cluster_feats'] or self.config['use_all_feats']:
                     # For feature-based models, use average features from training set as baseline
                     if self.config['use_cluster_feats']:
@@ -461,9 +474,6 @@ class Trainer:
                     logits = model(texts, baseline_feats)
                 else:
                     logits = model(texts, None)
-                
-                # Get probabilities using softmax
-                probabilities = torch.softmax(logits, dim=1)
                 
                 # Determine target class for explanation
                 if target_class is None:
