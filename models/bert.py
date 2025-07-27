@@ -474,9 +474,10 @@ class Trainer:
         # Get background data (sample from training set)
         background_texts = train_df['text'].sample(min(50, len(train_df)), random_state=42).tolist()
         
-        # Create explainer with tokenizer
+        # Create explainer with text masker
         print("Creating SHAP explainer...", flush=True)
-        explainer = shap.Explainer(predict_wrapper, background_texts, tokenizer=self.model.tokenizer)
+        masker = shap.maskers.Text(self.model.tokenizer)
+        explainer = shap.Explainer(predict_wrapper, masker)
         
         # Generate explanations
         print("Generating SHAP explanations...", flush=True)
