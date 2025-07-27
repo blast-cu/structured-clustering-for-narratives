@@ -124,7 +124,18 @@ def gen_data(cluster_analysis, ranked_clusters, output_file="theme_qual_data.tsv
                 
                 # Join all sentences with newlines
                 combined_sentences = '\n'.join(all_sentences)
-                writer.writerow([combined_sentences, theme, region])
+                
+                # Pretty print the theme JSON string
+                if isinstance(theme, str):
+                    try:
+                        theme_dict = json.loads(theme)
+                        pretty_theme = json.dumps(theme_dict, indent=2, ensure_ascii=False)
+                    except json.JSONDecodeError:
+                        pretty_theme = theme  # Use original if not valid JSON
+                else:
+                    pretty_theme = json.dumps(theme, indent=2, ensure_ascii=False)
+                
+                writer.writerow([combined_sentences, pretty_theme, region])
     
     print(f"Generated TSV data for {len(sampled_clusters)} clusters in {output_file}")
 

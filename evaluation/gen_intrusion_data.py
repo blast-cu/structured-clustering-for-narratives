@@ -539,9 +539,9 @@ def main():
     if args.evaluate:
         # Evaluation mode
         # evaluate_predictions(args.output_csv, args.output_solutions, args.evaluate)
-        evaluate_predictions("./data/mfc/guncontrol/intrusion_test/intrusion_examples_method_2.tsv",
-                             "./data/mfc/guncontrol/intrusion_test/intrusion_examples_method_2_solutions.pkl",
-                             "./data/mfc/guncontrol/intrusion_test/answers.txt")
+        evaluate_predictions("./data/mfc/immigration/intrusion_test/intrusion_examples_method_2.tsv",
+                             "./data/mfc/immigration/intrusion_test/intrusion_examples_method_2_solutions.pkl",
+                             "./data/mfc/immigration/intrusion_test/answers.txt")
     else:
         # Generation mode
         config = ConfigFactory.parse_file('./config.conf')[args.config]
