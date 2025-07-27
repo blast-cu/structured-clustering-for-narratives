@@ -766,7 +766,13 @@ class NeuralNetTrainer:
         shap_values = explainer.shap_values(target_combined)
         
         # Get SHAP values for target class
-        target_shap_values = shap_values[target_class][0]  # [class][instance]
+        # Handle different SHAP value formats
+        if isinstance(shap_values, list) and len(shap_values) > 1:
+            # Multi-class output format: [class][instance]
+            target_shap_values = shap_values[target_class][0]
+        else:
+            # Single output format: [instance][feature]
+            target_shap_values = shap_values[0]
         
         # Create local bar plot using SHAP's built-in plotting
         print("Generating local feature importance bar plot...", flush=True)
