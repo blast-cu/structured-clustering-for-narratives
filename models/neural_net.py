@@ -658,14 +658,15 @@ class NeuralNetTrainer:
         print(f"Model loaded successfully. Test F1: {checkpoint['test_f1']:.3f}, Test Acc: {checkpoint['test_acc']:.3f}")
         return model, architecture
     
-    def shap_analysis_single_instance(self, split='dev', index=0, target_class=None, model_path=None):
-        """Perform SHAP analysis on a single instance from dev or test set with local bar plot.
+    def shap_analysis_single_instance(self, split='dev', index=0, target_class=None, model_path=None, plot_type='bar'):
+        """Perform SHAP analysis on a single instance from dev or test set with local plot.
         
         Args:
             split: Which split to analyze ('dev' or 'test')
             index: Index of instance to analyze
             target_class: Specific class to explain (if None, uses predicted class)
             model_path: Path to saved model (if None, uses default path)
+            plot_type: Type of plot to generate ('bar' or 'waterfall')
         """
         try:
             import matplotlib.pyplot as plt
@@ -793,15 +794,31 @@ class NeuralNetTrainer:
             data=target_combined[0]
         )
         
-        # Generate SHAP bar plot
+        # Generate SHAP plot based on plot_type
         plt.figure(figsize=(12, 10))
-        shap.plots.bar(explanation, max_display=20, show=False)
-        plt.title(f'Local Feature Importance for {split.upper()} Instance #{index}\n'
-                 f'True: {true_label} | Predicted: {predicted_label} (conf: {predicted_prob:.3f})\n'
-                 f'Explaining class: {label_encoder.inverse_transform([target_class])[0]}')
+        
+        if plot_type == 'bar':
+            shap.plots.bar(explanation, max_display=20, show=False)
+            plt.title(f'Local Feature Importance (Bar Plot) for {split.upper()} Instance #{index}\n'
+                     f'True: {true_label} | Predicted: {predicted_label} (conf: {predicted_prob:.3f})\n'
+                     f'Explaining class: {label_encoder.inverse_transform([target_class])[0]}')
+            
+            # Customize y-axis for bar plot
+            ax = plt.gca()
+            current_labels = [label.get_text() for label in ax.get_yticklabels()]
+            ax.set_yticklabels([f"Feature {i+1}" for i in range(len(current_labels))])
+            plt.yticks(rotation=0)
+            
+        elif plot_type == 'waterfall':
+            shap.plots.waterfall(explanation, max_display=20, show=False)
+            plt.title(f'Local Feature Importance (Waterfall Plot) for {split.upper()} Instance #{index}\n'
+                     f'True: {true_label} | Predicted: {predicted_label} (conf: {predicted_prob:.3f})\n'
+                     f'Explaining class: {label_encoder.inverse_transform([target_class])[0]}')
+        else:
+            raise ValueError(f"Invalid plot_type: {plot_type}. Must be 'bar' or 'waterfall'")
         
         # Save the plot
-        plot_path = self.config["frame_prediction_data_path"] + f"neural_net_shap_local_{split}_{index}.png"
+        plot_path = self.config["frame_prediction_data_path"] + f"neural_net_shap_local_{plot_type}_{split}_{index}.png"
         plt.savefig(plot_path, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Local SHAP plot saved to: {plot_path}")
