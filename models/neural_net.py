@@ -789,8 +789,28 @@ class NeuralNetTrainer:
         
         # Get base value (expected output when all features are at their baseline)
         base_value = explainer.expected_value
-        if isinstance(base_value, np.ndarray):
-            base_value = base_value[target_class] if len(base_value) > target_class else base_value[0]
+        print(f"Debug: explainer.expected_value = {base_value}")
+        print(f"Debug: type(explainer.expected_value) = {type(base_value)}")
+        
+        if base_value is None:
+            # Calculate base value manually as the mean prediction of background data
+            background_predictions = model_wrapper(background_combined)
+            if len(background_predictions.shape) > 1 and background_predictions.shape[1] > 1:
+                # Multi-class case - get mean for target class
+                base_value = float(np.mean(background_predictions[:, target_class]))
+            else:
+                # Single output case
+                base_value = float(np.mean(background_predictions))
+            print(f"Debug: calculated base_value = {base_value}")
+        elif isinstance(base_value, np.ndarray):
+            if len(base_value) > target_class:
+                base_value = float(base_value[target_class])
+            else:
+                base_value = float(base_value[0])
+            print(f"Debug: extracted base_value = {base_value}")
+        else:
+            base_value = float(base_value)
+            print(f"Debug: converted base_value = {base_value}")
         
         # Create SHAP Explanation object for plotting
         explanation = shap.Explanation(
