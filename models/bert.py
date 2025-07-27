@@ -274,6 +274,22 @@ class Trainer:
         test_f1, test_acc = self.evaluate(best_model, test_dataloader)
 
         print(f"{np.round(train_acc * 100, 2)}\t{np.round(train_f1 * 100, 2)}\t{np.round(best_val_acc * 100, 2)}\t{np.round(best_val_f1 * 100, 2)}\t{np.round(test_acc * 100, 2)}\t{np.round(test_f1 * 100, 2)}", flush=True)
+        
+        # Save the best model
+        model_save_path = self.config["frame_prediction_data_path"] + "best_bert_model.pt"
+        torch.save({
+            'model_state_dict': best_model.state_dict(),
+            'config': self.config,
+            'train_f1': train_f1,
+            'train_acc': train_acc,
+            'val_f1': best_val_f1,
+            'val_acc': best_val_acc,
+            'test_f1': test_f1,
+            'test_acc': test_acc
+        }, model_save_path)
+        print(f"Model saved to: {model_save_path}", flush=True)
+        
+        return best_model
 
     def evaluate(self, model, dataloader):
         print("Evaluating...", flush=True)
@@ -367,6 +383,165 @@ class Trainer:
         
         return all_predictions, all_probabilities
 
+    def load_model_from_disk(self, model_path=None):
+        """Load trained model from disk."""
+        if model_path is None:
+            model_path = self.config["frame_prediction_data_path"] + "best_bert_model.pt"
+        
+        print(f"Loading model from: {model_path}", flush=True)
+        checkpoint = torch.load(model_path, map_location=self.device)
+        
+        # Create new model instance with saved config
+        saved_config = checkpoint['config']
+        model = Model(saved_config, self.device)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
+        
+        print(f"Model loaded successfully. Test F1: {checkpoint['test_f1']:.3f}, Test Acc: {checkpoint['test_acc']:.3f}")
+        return model
+
+    def shap_analysis_single_instance(self, split='dev', index=0, target_class=None, model_path=None):
+        """Perform SHAP analysis on a single instance from dev or test set.
+        
+        Args:
+            split: Which split to analyze ('dev' or 'test')
+            index: Index of instance to analyze
+            target_class: Specific class to explain (if None, uses predicted class)
+            model_path: Path to saved model (if None, uses default path)
+        """
+        try:
+            import shap
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("SHAP or matplotlib not installed. Install with: pip install shap matplotlib")
+            return
+        
+        print(f"Performing SHAP analysis on {split} split, index {index}...", flush=True)
+        
+        # Load model from disk
+        model = self.load_model_from_disk(model_path)
+        
+        # Load dataset
+        train_df, dev_df, test_df, label_encoder, _, _, _ = self.load_dataset()
+        
+        # Get the target instance
+        if split == 'dev':
+            target_df = dev_df
+        elif split == 'test':
+            target_df = test_df
+        else:
+            raise ValueError("Split must be 'dev' or 'test'")
+            
+        if index >= len(target_df):
+            raise ValueError(f"Index {index} out of range for {split} split (max: {len(target_df)-1})")
+            
+        target_text = target_df.iloc[index]['text']
+        true_label = target_df.iloc[index]['frame_label']
+        
+        print(f"Target text preview: {target_text[:200]}...")
+        print(f"True label: {true_label}")
+        
+        # Create wrapper function for SHAP
+        def predict_wrapper(texts):
+            """Wrapper that takes raw text and returns logits for target class"""
+            model.eval()
+            with torch.no_grad():
+                if self.config['use_cluster_feats'] or self.config['use_all_feats']:
+                    # For feature-based models, we need to handle features
+                    # For now, use average features from training set as baseline
+                    if self.config['use_cluster_feats']:
+                        baseline_feats = torch.tensor(train_df['cluster_feats'].tolist(), dtype=torch.float32).mean(dim=0, keepdim=True)
+                        baseline_feats = baseline_feats.repeat(len(texts), 1).to(self.device)
+                    elif self.config['use_all_feats']:
+                        train_cluster_feats = torch.tensor(train_df['cluster_feats'].tolist(), dtype=torch.float32).mean(dim=0, keepdim=True)
+                        train_role_feats = torch.tensor(train_df['role_feats'].tolist(), dtype=torch.float32).mean(dim=0, keepdim=True)
+                        train_stance_feats = torch.tensor(train_df['stance_feats'].tolist(), dtype=torch.float32).mean(dim=0, keepdim=True)
+                        baseline_feats = torch.cat((train_cluster_feats, train_role_feats, train_stance_feats), dim=1)
+                        baseline_feats = baseline_feats.repeat(len(texts), 1).to(self.device)
+                    
+                    logits = model(texts, baseline_feats)
+                else:
+                    logits = model(texts, None)
+                
+                # Determine target class
+                if target_class is None:
+                    pred_class = torch.argmax(logits, dim=1)[0].item()
+                else:
+                    pred_class = target_class
+                
+                return logits[:, pred_class].cpu().numpy()
+        
+        # Get background data (sample from training set)
+        background_texts = train_df['text'].sample(min(50, len(train_df)), random_state=42).tolist()
+        
+        # Create explainer with tokenizer
+        print("Creating SHAP explainer...", flush=True)
+        explainer = shap.Explainer(predict_wrapper, background_texts, tokenizer=self.model.tokenizer)
+        
+        # Generate explanations
+        print("Generating SHAP explanations...", flush=True)
+        shap_values = explainer([target_text])
+        
+        # Get predicted class info
+        model.eval()
+        with torch.no_grad():
+            if self.config['use_cluster_feats']:
+                target_feats = torch.tensor([target_df.iloc[index]['cluster_feats']], dtype=torch.float32).to(self.device)
+            elif self.config['use_all_feats']:
+                target_cluster_feats = torch.tensor([target_df.iloc[index]['cluster_feats']], dtype=torch.float32)
+                target_role_feats = torch.tensor([target_df.iloc[index]['role_feats']], dtype=torch.float32)
+                target_stance_feats = torch.tensor([target_df.iloc[index]['stance_feats']], dtype=torch.float32)
+                target_feats = torch.cat((target_cluster_feats, target_role_feats, target_stance_feats), dim=1).to(self.device)
+            else:
+                target_feats = None
+                
+            logits = model([target_text], target_feats)
+            predicted_class = torch.argmax(logits, dim=1)[0].item()
+            predicted_prob = torch.softmax(logits, dim=1)[0, predicted_class].item()
+        
+        # Load label encoder to get class names
+        with open(self.config["frame_prediction_data_path"] + "frame_prediction_data.pickle", "rb") as f:
+            dataset = pickle.load(f)
+        label_encoder = dataset['label_encoder']
+        
+        predicted_label = label_encoder.inverse_transform([predicted_class])[0]
+        
+        print(f"Predicted label: {predicted_label} (confidence: {predicted_prob:.3f})")
+        print(f"Target class for explanation: {predicted_class}")
+        
+        # Generate and save SHAP text plot
+        print("Generating SHAP text plot...", flush=True)
+        
+        # Create the plot
+        fig = plt.figure(figsize=(12, 8))
+        shap.plots.text(shap_values[0], display=False)
+        
+        # Save the plot
+        plot_path = self.config["frame_prediction_data_path"] + f"shap_plot_{split}_{index}.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        print(f"SHAP plot saved to: {plot_path}")
+        
+        # Save SHAP values for further analysis if needed
+        shap_output = {
+            'shap_values': shap_values,
+            'target_text': target_text,
+            'true_label': true_label,
+            'predicted_label': predicted_label,
+            'predicted_class': predicted_class,
+            'predicted_prob': predicted_prob,
+            'split': split,
+            'index': index,
+            'plot_path': plot_path
+        }
+        
+        with open(self.config["frame_prediction_data_path"] + f"shap_analysis_{split}_{index}.pickle", "wb") as f:
+            pickle.dump(shap_output, f)
+            
+        print(f"SHAP analysis saved to: {self.config['frame_prediction_data_path']}shap_analysis_{split}_{index}.pickle")
+        
+        return shap_values
+
 
 
 if __name__ == "__main__":
@@ -386,3 +561,8 @@ if __name__ == "__main__":
     
     # Run inference on full dataset after training
     predictions, probabilities = trainer.inference(trainer.model, train_dataloader, dev_dataloader, test_dataloader)
+    
+    # Example: Run SHAP analysis on dev set, index 0 (uncomment to use)
+    # shap_values = trainer.shap_analysis_single_instance(
+    #     split='dev', index=0
+    # )
