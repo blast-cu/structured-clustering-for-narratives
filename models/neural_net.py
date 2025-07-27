@@ -865,15 +865,17 @@ if __name__ == "__main__":
     print()
     
     trainer = NeuralNetTrainer(config)
-    train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader = trainer.load_dataset()
+    # train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader = trainer.load_dataset()
     
-    print("Training neural network model using only cluster, role, and stance frequency features...", flush=True)
-    results = trainer.train(train_dataloader, dev_dataloader, test_dataloader)
+    # print("Training neural network model using only cluster, role, and stance frequency features...", flush=True)
+    # results = trainer.train(train_dataloader, dev_dataloader, test_dataloader)
     
-    print("Performing SHAP feature importance analysis...", flush=True)
-    shap_values, feature_names = trainer.analyze_feature_importance(train_dataloader, dev_dataloader, test_dataloader, label_encoder)
+    # print("Performing SHAP feature importance analysis...", flush=True)
+    # shap_values, feature_names = trainer.analyze_feature_importance(train_dataloader, dev_dataloader, test_dataloader, label_encoder)
     
-    print("Saving predictions for model comparison...", flush=True)
-    trainer.save_predictions(dev_df, test_df, dev_dataloader, test_dataloader, label_encoder)
+    # print("Saving predictions for model comparison...", flush=True)
+    # trainer.save_predictions(dev_df, test_df, dev_dataloader, test_dataloader, label_encoder)
     
-    print("Neural network training and analysis complete!", flush=True)
+    # print("Neural network training and analysis complete!", flush=True)
+
+    trainer.shap_analysis_single_instance(split='dev', index=0)
