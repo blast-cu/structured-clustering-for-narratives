@@ -247,6 +247,26 @@ class NeuralNetTrainer:
         print(f"Test\t\t{test_acc*100:.2f}\t\t{test_f1*100:.2f}")
         print("====================\n")
         
+        # Save the best model
+        model_save_path = self.config["frame_prediction_data_path"] + "best_neural_net_model.pt"
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'config': self.config,
+            'model_architecture': {
+                'cluster_dim': self.model.cluster_transform[0].in_features,
+                'role_dim': self.model.role_transform[0].in_features,
+                'stance_dim': self.model.stance_transform[0].in_features,
+                'num_classes': self.model.classifier.out_features
+            },
+            'train_f1': train_f1,
+            'train_acc': train_acc,
+            'val_f1': final_val_f1,
+            'val_acc': final_val_acc,
+            'test_f1': test_f1,
+            'test_acc': test_acc
+        }, model_save_path)
+        print(f"Model saved to: {model_save_path}", flush=True)
+        
         return train_f1, train_acc, final_val_f1, final_val_acc, test_f1, test_acc
     
     def evaluate(self, model, dataloader):
@@ -612,6 +632,186 @@ class NeuralNetTrainer:
             print(f"  Incorrect matches: {len(matching_examples) - correct_matches}")
         
         return nn_predictions
+    
+    def load_model_from_disk(self, model_path=None):
+        """Load trained model from disk."""
+        if model_path is None:
+            model_path = self.config["frame_prediction_data_path"] + "best_neural_net_model.pt"
+        
+        print(f"Loading model from: {model_path}", flush=True)
+        checkpoint = torch.load(model_path, map_location=self.device)
+        
+        # Create new model instance with saved architecture
+        saved_config = checkpoint['config']
+        architecture = checkpoint['model_architecture']
+        model = NeuralNetModel(
+            saved_config,
+            cluster_dim=architecture['cluster_dim'],
+            role_dim=architecture['role_dim'],
+            stance_dim=architecture['stance_dim'],
+            num_classes=architecture['num_classes'],
+            device=self.device
+        )
+        model.load_state_dict(checkpoint['model_state_dict'])
+        model.eval()
+        
+        print(f"Model loaded successfully. Test F1: {checkpoint['test_f1']:.3f}, Test Acc: {checkpoint['test_acc']:.3f}")
+        return model, architecture
+    
+    def shap_analysis_single_instance(self, split='dev', index=0, target_class=None, model_path=None):
+        """Perform SHAP analysis on a single instance from dev or test set with local bar plot.
+        
+        Args:
+            split: Which split to analyze ('dev' or 'test')
+            index: Index of instance to analyze
+            target_class: Specific class to explain (if None, uses predicted class)
+            model_path: Path to saved model (if None, uses default path)
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            print("Matplotlib not installed. Install with: pip install matplotlib")
+            return
+        
+        print(f"Performing SHAP analysis on {split} split, index {index}...", flush=True)
+        
+        # Load model from disk
+        model, architecture = self.load_model_from_disk(model_path)
+        
+        # Load dataset
+        train_df, dev_df, test_df, label_encoder, _, _, _ = self.load_dataset()
+        
+        # Get the target instance
+        if split == 'dev':
+            target_df = dev_df
+        elif split == 'test':
+            target_df = test_df
+        else:
+            raise ValueError("Split must be 'dev' or 'test'")
+            
+        if index >= len(target_df):
+            raise ValueError(f"Index {index} out of range for {split} split (max: {len(target_df)-1})")
+        
+        # Get target instance features
+        target_cluster_feats = torch.tensor([target_df.iloc[index]['cluster_feats_frequency']], dtype=torch.float32).to(self.device)
+        target_role_feats = torch.tensor([target_df.iloc[index]['role_feats']], dtype=torch.float32).to(self.device)
+        target_stance_feats = torch.tensor([target_df.iloc[index]['stance_feats']], dtype=torch.float32).to(self.device)
+        true_label = target_df.iloc[index]['frame_label']
+        
+        print(f"True label: {true_label}")
+        
+        # Get model prediction for target instance
+        model.eval()
+        with torch.no_grad():
+            logits = model(target_cluster_feats, target_role_feats, target_stance_feats)
+            predicted_class = torch.argmax(logits, dim=1)[0].item()
+            predicted_prob = torch.softmax(logits, dim=1)[0, predicted_class].item()
+        
+        predicted_label = label_encoder.inverse_transform([predicted_class])[0]
+        print(f"Predicted label: {predicted_label} (confidence: {predicted_prob:.3f})")
+        
+        # Determine target class for explanation
+        if target_class is None:
+            target_class = predicted_class
+        
+        print(f"Target class for explanation: {target_class} ({label_encoder.inverse_transform([target_class])[0]})")
+        
+        # Create background data from training set (sample for efficiency)
+        background_cluster = torch.tensor(train_df['cluster_feats_frequency'].tolist()[:100], dtype=torch.float32)
+        background_role = torch.tensor(train_df['role_feats'].tolist()[:100], dtype=torch.float32)
+        background_stance = torch.tensor(train_df['stance_feats'].tolist()[:100], dtype=torch.float32)
+        
+        # Create wrapper function for SHAP
+        def model_wrapper(combined_features):
+            cluster_dim = architecture['cluster_dim']
+            role_dim = architecture['role_dim']
+            stance_dim = architecture['stance_dim']
+            
+            # Split combined features back
+            cluster_feats = combined_features[:, :cluster_dim]
+            role_feats = combined_features[:, cluster_dim:cluster_dim+role_dim]
+            stance_feats = combined_features[:, cluster_dim+role_dim:]
+            
+            # Convert to tensors
+            cluster_tensor = torch.tensor(cluster_feats, dtype=torch.float32, device=self.device)
+            role_tensor = torch.tensor(role_feats, dtype=torch.float32, device=self.device)
+            stance_tensor = torch.tensor(stance_feats, dtype=torch.float32, device=self.device)
+            
+            with torch.no_grad():
+                outputs = model(cluster_tensor, role_tensor, stance_tensor)
+                probabilities = torch.softmax(outputs, dim=1)
+            
+            return probabilities.cpu().numpy()
+        
+        # Combine features for SHAP
+        background_combined = torch.cat([background_cluster, background_role, background_stance], dim=1).numpy()
+        target_combined = torch.cat([target_cluster_feats.cpu(), target_role_feats.cpu(), target_stance_feats.cpu()], dim=1).numpy()
+        
+        # Create feature names  
+        cluster_dim = architecture['cluster_dim']
+        role_dim = architecture['role_dim']
+        stance_dim = architecture['stance_dim']
+        
+        cluster_names = [f'cluster_freq_{i}' for i in range(cluster_dim)]
+        role_names = [f'role_{i}' for i in range(role_dim)]
+        stance_names = [f'stance_{i}' for i in range(stance_dim)]
+        feature_names = cluster_names + role_names + stance_names
+        
+        # Create SHAP explainer
+        print("Creating SHAP explainer...", flush=True)
+        explainer = shap.KernelExplainer(model_wrapper, background_combined)
+        
+        # Generate explanations for target instance
+        print("Generating SHAP explanations...", flush=True)
+        shap_values = explainer.shap_values(target_combined)
+        
+        # Get SHAP values for target class
+        target_shap_values = shap_values[target_class][0]  # [class][instance]
+        
+        # Create local bar plot using SHAP's built-in plotting
+        print("Generating local feature importance bar plot...", flush=True)
+        
+        # Create SHAP Explanation object for plotting
+        explanation = shap.Explanation(
+            values=target_shap_values,
+            feature_names=feature_names,
+            data=target_combined[0]
+        )
+        
+        # Generate SHAP bar plot
+        plt.figure(figsize=(12, 10))
+        shap.plots.bar(explanation, max_display=20, show=False)
+        plt.title(f'Local Feature Importance for {split.upper()} Instance #{index}\n'
+                 f'True: {true_label} | Predicted: {predicted_label} (conf: {predicted_prob:.3f})\n'
+                 f'Explaining class: {label_encoder.inverse_transform([target_class])[0]}')
+        
+        # Save the plot
+        plot_path = self.config["frame_prediction_data_path"] + f"neural_net_shap_local_{split}_{index}.png"
+        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+        plt.close()
+        print(f"Local SHAP plot saved to: {plot_path}")
+        
+        # Save SHAP analysis data
+        shap_output = {
+            'shap_values': target_shap_values.tolist(),
+            'feature_names': feature_names,
+            'target_features': target_combined[0].tolist(),
+            'true_label': true_label,
+            'predicted_label': predicted_label,
+            'predicted_class': predicted_class,
+            'predicted_prob': predicted_prob,
+            'target_class': target_class,
+            'split': split,
+            'index': index,
+            'plot_path': plot_path
+        }
+        
+        with open(self.config["frame_prediction_data_path"] + f"neural_net_shap_analysis_{split}_{index}.pickle", "wb") as f:
+            pickle.dump(shap_output, f)
+            
+        print(f"SHAP analysis saved to: {self.config['frame_prediction_data_path']}neural_net_shap_analysis_{split}_{index}.pickle")
+        
+        return target_shap_values, feature_names
 
 
 if __name__ == "__main__":
