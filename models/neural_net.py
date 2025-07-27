@@ -532,6 +532,86 @@ class NeuralNetTrainer:
         print("="*60 + "\n")
         
         return shap_values, feature_names
+    
+    def save_predictions(self, dev_df, test_df, dev_dataloader, test_dataloader, label_encoder):
+        """Save predictions and compare with BERT model directly."""
+        print("Generating neural network predictions and comparing with BERT...")
+        
+        self.model.eval()
+        
+        # Load BERT predictions
+        try:
+            with open(self.config["frame_prediction_data_path"] + "bert_predictions.pickle", "rb") as f:
+                bert_data = pickle.load(f)
+            print("Loaded BERT predictions for comparison")
+        except FileNotFoundError:
+            print("BERT predictions not found - saving neural net predictions only")
+            bert_data = None
+        
+        # Get neural net predictions for dev and test
+        dataloaders = [('dev', dev_dataloader, dev_df), ('test', test_dataloader, test_df)]
+        nn_predictions = {}
+        matching_examples = []
+        
+        for split_name, dataloader, df in dataloaders:
+            split_predictions = []
+            
+            with torch.no_grad():
+                for cluster_feats, role_feats, stance_feats, labels in dataloader:
+                    cluster_feats = cluster_feats.to(self.device)
+                    role_feats = role_feats.to(self.device)
+                    stance_feats = stance_feats.to(self.device)
+                    
+                    outputs = self.model(cluster_feats, role_feats, stance_feats)
+                    predictions = torch.argmax(outputs, dim=1)
+                    split_predictions.extend(predictions.cpu().numpy())
+            
+            nn_predictions[split_name] = split_predictions
+            
+            # Compare with BERT if available
+            if bert_data:
+                bert_split_preds = None
+                for bert_split in bert_data['predictions']:
+                    if bert_split['split'] == split_name:
+                        bert_split_preds = bert_split['predictions']
+                        break
+                
+                if bert_split_preds:
+                    # Direct comparison since both use shuffle=False
+                    for i, (nn_pred, bert_pred) in enumerate(zip(split_predictions, bert_split_preds)):
+                        if nn_pred == bert_pred:
+                            true_label = df['frame_label_encoded'].iloc[i]
+                            matching_examples.append({
+                                'split': split_name,
+                                'index': i,
+                                'text': df['text'].iloc[i],
+                                'true_label': int(true_label),
+                                'true_label_name': label_encoder.classes_[true_label],
+                                'predicted_label': int(nn_pred),
+                                'predicted_label_name': label_encoder.classes_[nn_pred],
+                                'prediction_correct': bool(nn_pred == true_label)
+                            })
+        
+        # Save results
+        if bert_data and matching_examples:
+            print(f"Found {len(matching_examples)} matching predictions between neural net and BERT")
+            
+            # Save matching examples
+            import json
+            with open(self.config["frame_prediction_data_path"] + "matching_predictions.json", "w") as f:
+                json.dump(matching_examples, f, indent=2)
+            
+            # Print summary
+            correct_matches = sum(1 for ex in matching_examples if ex['prediction_correct'])
+            total_examples = sum(len(nn_predictions[split]) for split in ['dev', 'test'])
+            
+            print(f"Agreement summary:")
+            print(f"  Total examples: {total_examples}")
+            print(f"  Matching predictions: {len(matching_examples)} ({len(matching_examples)/total_examples*100:.1f}%)")
+            print(f"  Correct matches: {correct_matches}")
+            print(f"  Incorrect matches: {len(matching_examples) - correct_matches}")
+        
+        return nn_predictions
 
 
 if __name__ == "__main__":
@@ -577,5 +657,8 @@ if __name__ == "__main__":
     
     print("Performing SHAP feature importance analysis...", flush=True)
     shap_values, feature_names = trainer.analyze_feature_importance(train_dataloader, dev_dataloader, test_dataloader, label_encoder)
+    
+    print("Saving predictions for model comparison...", flush=True)
+    trainer.save_predictions(dev_df, test_df, dev_dataloader, test_dataloader, label_encoder)
     
     print("Neural network training and analysis complete!", flush=True)
