@@ -575,6 +575,7 @@ class NeuralNetTrainer:
         
         for split_name, dataloader, df in dataloaders:
             split_predictions = []
+            split_confidences = []
             
             with torch.no_grad():
                 for cluster_feats, role_feats, stance_feats, labels in dataloader:
@@ -583,17 +584,24 @@ class NeuralNetTrainer:
                     stance_feats = stance_feats.to(self.device)
                     
                     outputs = self.model(cluster_feats, role_feats, stance_feats)
+                    probabilities = torch.softmax(outputs, dim=1)
                     predictions = torch.argmax(outputs, dim=1)
+                    confidences = torch.max(probabilities, dim=1)[0]  # Get max probability (confidence)
+                    
                     split_predictions.extend(predictions.cpu().numpy())
+                    split_confidences.extend(confidences.cpu().numpy())
             
-            nn_predictions[split_name] = split_predictions
+            nn_predictions[split_name] = {'predictions': split_predictions, 'confidences': split_confidences}
             
             # Compare with BERT if available
             if bert_data:
                 bert_split_preds = None
+                bert_split_confidences = None
                 for bert_split in bert_data['predictions']:
                     if bert_split['split'] == split_name:
                         bert_split_preds = bert_split['predictions']
+                        # Check if BERT data has confidence scores
+                        bert_split_confidences = bert_split.get('confidences', None)
                         break
                 
                 if bert_split_preds:
@@ -601,6 +609,9 @@ class NeuralNetTrainer:
                     for i, (nn_pred, bert_pred) in enumerate(zip(split_predictions, bert_split_preds)):
                         if nn_pred == bert_pred:
                             true_label = df['frame_label_encoded'].iloc[i]
+                            nn_confidence = float(split_confidences[i])
+                            bert_confidence = float(bert_split_confidences[i]) if bert_split_confidences else None
+                            
                             matching_examples.append({
                                 'split': split_name,
                                 'index': i,
@@ -609,7 +620,9 @@ class NeuralNetTrainer:
                                 'true_label_name': label_encoder.classes_[true_label],
                                 'predicted_label': int(nn_pred),
                                 'predicted_label_name': label_encoder.classes_[nn_pred],
-                                'prediction_correct': bool(nn_pred == true_label)
+                                'prediction_correct': bool(nn_pred == true_label),
+                                'neural_net_confidence': nn_confidence,
+                                'bert_confidence': bert_confidence
                             })
         
         # Save results
@@ -623,7 +636,7 @@ class NeuralNetTrainer:
             
             # Print summary
             correct_matches = sum(1 for ex in matching_examples if ex['prediction_correct'])
-            total_examples = sum(len(nn_predictions[split]) for split in ['dev', 'test'])
+            total_examples = sum(len(nn_predictions[split]['predictions']) for split in ['dev', 'test'])
             
             print(f"Agreement summary:")
             print(f"  Total examples: {total_examples}")
