@@ -787,9 +787,15 @@ class NeuralNetTrainer:
         if hasattr(target_shap_values, 'shape') and len(target_shap_values.shape) > 1:
             target_shap_values = target_shap_values.flatten()
         
+        # Get base value (expected output when all features are at their baseline)
+        base_value = explainer.expected_value
+        if isinstance(base_value, np.ndarray):
+            base_value = base_value[target_class] if len(base_value) > target_class else base_value[0]
+        
         # Create SHAP Explanation object for plotting
         explanation = shap.Explanation(
             values=target_shap_values,
+            base_values=base_value,
             feature_names=feature_names,
             data=target_combined[0]
         )
