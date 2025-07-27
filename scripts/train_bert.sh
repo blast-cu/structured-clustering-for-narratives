@@ -11,7 +11,7 @@
 #SBATCH --mem=20G
 #SBATCH --gres=gpu:1
 #SBATCH --job-name=train_bert
-#SBATCH --output=logs/bert.%j.log
+#SBATCH --output=logs/shap_find.%j.log
 
 source ~/.bashrc
 
@@ -25,6 +25,6 @@ export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 
 # python3 ./models/create_dataset.py -c "mfc_immigration"
-# python3 ./models/bert.py -c "mfc_immigration"
+python3 ./models/bert.py -c "mfc_immigration"
 
-python3 ./models/surrogate_model.py -c "mfc_immigration"
+# python3 ./models/surrogate_model.py -c "mfc_immigration"

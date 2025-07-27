@@ -556,13 +556,13 @@ if __name__ == "__main__":
     trainer = Trainer(config)
     train_df, dev_df, test_df, label_encoder, train_dataloader, dev_dataloader, test_dataloader = (
         trainer.load_dataset())
-    print("Training model...", flush=True)
-    trainer.train(train_dataloader, dev_dataloader, test_dataloader)
+    # print("Training model...", flush=True)
+    # trainer.train(train_dataloader, dev_dataloader, test_dataloader)
     
     # Run inference on full dataset after training
     predictions, probabilities = trainer.inference(trainer.model, train_dataloader, dev_dataloader, test_dataloader)
     
     # Example: Run SHAP analysis on dev set, index 0 (uncomment to use)
-    # shap_values = trainer.shap_analysis_single_instance(
-    #     split='dev', index=0
-    # )
+    shap_values = trainer.shap_analysis_single_instance(
+        split='dev', index=0
+    )
