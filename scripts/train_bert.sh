@@ -25,5 +25,5 @@ export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 
 # python3 ./models/create_dataset.py -c "mfc_immigration"
-python3 ./models/bert.py -c "mfc_guncontrol"
-# python3 ./models/neural_net.py -c "mfc_guncontrol" --lr 
+# python3 ./models/bert.py -c "mfc_guncontrol"
+python3 ./models/neural_net.py -c "mfc_guncontrol"
