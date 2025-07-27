@@ -560,7 +560,7 @@ if __name__ == "__main__":
     # trainer.train(train_dataloader, dev_dataloader, test_dataloader)
     
     # Run inference on full dataset after training
-    predictions, probabilities = trainer.inference(trainer.model, train_dataloader, dev_dataloader, test_dataloader)
+    # predictions, probabilities = trainer.inference(trainer.model, train_dataloader, dev_dataloader, test_dataloader)
     
     # Example: Run SHAP analysis on dev set, index 0 (uncomment to use)
     shap_values = trainer.shap_analysis_single_instance(
