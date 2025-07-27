@@ -522,15 +522,27 @@ class Trainer:
         # Generate and save SHAP text plot
         print("Generating SHAP text plot...", flush=True)
         
-        # Create the plot
-        fig = plt.figure(figsize=(12, 8))
-        shap.plots.text(shap_values[0], display=False)
+        # Generate HTML output from SHAP
+        html_output = shap.plots.text(shap_values[0], display=False)
         
-        # Save the plot
-        plot_path = self.config["frame_prediction_data_path"] + f"shap_plot_{split}_{index}.png"
-        plt.savefig(plot_path, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        print(f"SHAP plot saved to: {plot_path}")
+        # Save as HTML file
+        html_path = self.config["frame_prediction_data_path"] + f"shap_plot_{split}_{index}.html"
+        with open(html_path, 'w', encoding='utf-8') as f:
+            f.write(html_output)
+        print(f"SHAP plot saved as HTML: {html_path}")
+        
+        # Also create a PNG version using matplotlib if needed
+        try:
+            plt.figure(figsize=(12, 8))
+            shap.plots.text(shap_values[0])  # Without display=False to show in matplotlib
+            plt.ioff()  # Turn off interactive mode
+            plot_path = self.config["frame_prediction_data_path"] + f"shap_plot_{split}_{index}.png"
+            plt.savefig(plot_path, dpi=300, bbox_inches='tight', facecolor='white')
+            plt.close()
+            print(f"SHAP plot also saved as PNG: {plot_path}")
+        except Exception as e:
+            print(f"PNG generation failed (this is ok, HTML version available): {e}")
+            plot_path = html_path  # Use HTML path if PNG fails
         
         # Save SHAP values for further analysis if needed
         shap_output = {
