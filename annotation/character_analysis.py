@@ -4,6 +4,7 @@ import pickle
 import re
 import shutil
 import concurrent.futures
+import threading
 
 from pyhocon import ConfigFactory
 from tqdm import tqdm
@@ -15,6 +16,9 @@ from utils.ollama_client import Ollama
 class CharacterAnalyzer:
     def __init__(self, host, port, config, domain, use_excerpt=False):
         self.config = config
+
+        # Add thread lock for safe saving
+        self.save_lock = threading.Lock()
 
         self.reasoning_model = Ollama(host,
                                       port,
@@ -196,8 +200,30 @@ class CharacterAnalyzer:
         return None
 
     def save_progress(self, annotated_docs):
-        with open(self.config["char_event_chains_path"], 'wb') as f:
-            pickle.dump(annotated_docs, f)
+        """Thread-safe atomic save using temporary file and rename"""
+        with self.save_lock:  # Ensure only one thread saves at a time
+            final_path = self.config["char_event_chains_path"]
+            temp_path = final_path + ".tmp"
+            
+            try:
+                # Write to temporary file first
+                with open(temp_path, 'wb') as f:
+                    pickle.dump(annotated_docs, f)
+                    f.flush()
+                    os.fsync(f.fileno())  # Force write to disk
+                
+                # Atomic rename - this is the safest way to replace the file
+                shutil.move(temp_path, final_path)
+                
+            except Exception as e:
+                # Clean up temp file if something went wrong
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except:
+                        pass
+                print(f"Error during save: {e}", flush=True)
+                raise
     
     def load_existing_progress(self):
         """Load existing processed documents if save file exists, creating a backup first"""
@@ -257,11 +283,37 @@ class CharacterAnalyzer:
         shutil.copy2(save_path, backup_path)
         print(f"Created backup: {backup_path}")
         
-        # Load data from the original file
-        with open(save_path, 'rb') as f:
-            existing_data = pickle.load(f)
-        print(f"Successfully loaded data from original file: {save_path}")
-        return existing_data
+        # Try to load data from the original file with error handling
+        try:
+            with open(save_path, 'rb') as f:
+                existing_data = pickle.load(f)
+            print(f"Successfully loaded data from original file: {save_path}")
+            return existing_data
+        except EOFError as e:
+            print(f"EOFError encountered - pickle file appears to be truncated: {e}")
+            print("File was likely corrupted during write operation")
+            
+            # Check file size for diagnostic info
+            file_size = os.path.getsize(save_path)
+            print(f"Corrupted file size: {file_size} bytes")
+            
+            if file_size == 0:
+                print("File is completely empty - starting fresh")
+            elif file_size < 100:
+                print("File is very small - likely header only - starting fresh")
+            else:
+                print("File has data but dictionary object is incomplete - cannot recover partial key-value pairs")
+                print("Note: Pickle stores the entire dictionary as one object, so partial recovery is not possible")
+            
+            print("Starting with empty data")
+            return {}
+            
+        except Exception as e:
+            print(f"Unexpected error loading pickle file: {e}")
+            file_size = os.path.getsize(save_path)
+            print(f"File size: {file_size} bytes")
+            print("Starting with empty data")
+            return {}
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='CharacterAnalyzer')
