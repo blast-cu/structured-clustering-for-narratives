@@ -82,8 +82,14 @@ python3 ./annotation/cluster_analysis.py -c "${source}_${domain}" --host ${HOST_
 
 # Citation
 
+---
 If you find our work useful, please consider citing our paper:
 
 ```
 TBC
 ```
+
+# License
+
+---
+This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html). You are free to use, modify, and distribute this code, but any derivative work must also be released under the same license and remain open source.
