@@ -1,12 +1,17 @@
 # structured-clustering-for-narratives
 
 ---
-### Code for the paper A Structured Clustering Approach for Inducing Media Narratives
+### Code for the paper "A Structured Clustering Approach for Inducing Media Narratives"
 
 # Abstract
 
 ---
 Media narratives wield tremendous power in shaping public opinion, yet computational approaches struggle to capture the nuanced storytelling structures that communication theory emphasizes as central to how meaning is constructed. Existing approaches either miss subtle narrative patterns through coarse-grained analysis or require domain-specific taxonomies that limit scalability. To bridge this gap, we present a framework for inducing rich narrative schemas by jointly modeling events and characters via structured clustering. Our approach produces explainable narrative schemas that align with established framing theory while scaling to large corpora without exhaustive manual annotation.
+
+# Data
+
+---
+Source data from the Media Frames Corpus (MFC) (Card et al., 2015) and place them under the `data/` directory.
 
 # Framework
 
