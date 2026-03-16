@@ -441,11 +441,13 @@ class IntrusionDataGenerator:
             # Save examples as tab-separated CSV with pretty-printed JSON
             with open(csv_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f, delimiter='\t')
-                writer.writerow(['example'])  # Header
-                for example in examples_by_method[method_name]:
+                writer.writerow(['example', 'difficulty', 'answer'])  # Header
+                for i, example in enumerate(examples_by_method[method_name]):
                     # Pretty print JSON with each sentence on a new line
                     json_str = json.dumps(example, ensure_ascii=False, indent=2)
-                    writer.writerow([json_str])
+                    difficulty = solutions_by_method[method_name][i]['difficulty']
+                    answer = solutions_by_method[method_name][i]['answer']
+                    writer.writerow([json_str, difficulty, answer])
             
             # Save solutions as pickle
             with open(solutions_path, 'wb') as f:

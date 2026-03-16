@@ -65,7 +65,7 @@ class KMeansClustering:
         # Run regression model after purity computation
         print("\n=== Regression Results ===", flush=True)
         regression_model = RegressionModel(self.config)
-        regression_model.run_regression(self.config, clustering_data)
+        regression_model.run_regression(self.config, clustering_data, filter_labels=True)
         print("==========================\n", flush=True)
 
         # Save clustering results

@@ -307,29 +307,34 @@ if __name__ == "__main__":
 
     print("Loading data from disk...", flush=True)
 
-    with open(config["cluster_eval_path"], "rb") as f:
-        clustering_data = pickle.load(f)
-
-    with open(config["processed_chains_path"], "rb") as f:
-        processed_chains = pickle.load(f)
-
-    with open(config["char_event_chains_path"], "rb") as f:
+    with open("./data/partisanship/guncontrol/partisanship_guncontrol_char_event_chains.pickle", "rb") as f:
         corpus = pickle.load(f)
 
-    # Set seed for reproducibility
-    seed = config["seed"]
-    random.seed(seed)
-    np.random.seed(seed)
+    pass
 
-    # Create dataset
-    dataset = create_dataset(config, clustering_data, processed_chains, corpus, args.c)
-    
-    # Save dataset to disk
-    print("Saving dataset to disk...", flush=True)
-    with open(config["frame_prediction_data_path"] + "frame_prediction_data.pickle", "wb") as f:
-        pickle.dump(dataset, f)
-    
-    print("Dataset creation complete!", flush=True)
-    print(f"Train samples: {len(dataset['train_df'])}")
-    print(f"Dev samples: {len(dataset['dev_df'])}")
-    print(f"Test samples: {len(dataset['test_df'])}")
+    # with open(config["cluster_eval_path"], "rb") as f:
+    #     clustering_data = pickle.load(f)
+    #
+    # with open(config["processed_chains_path"], "rb") as f:
+    #     processed_chains = pickle.load(f)
+    #
+    # with open(config["char_event_chains_path"], "rb") as f:
+    #     corpus = pickle.load(f)
+    #
+    # # Set seed for reproducibility
+    # seed = config["seed"]
+    # random.seed(seed)
+    # np.random.seed(seed)
+    #
+    # # Create dataset
+    # dataset = create_dataset(config, clustering_data, processed_chains, corpus, args.c)
+    #
+    # # Save dataset to disk
+    # print("Saving dataset to disk...", flush=True)
+    # with open(config["frame_prediction_data_path"] + "frame_prediction_data.pickle", "wb") as f:
+    #     pickle.dump(dataset, f)
+    #
+    # print("Dataset creation complete!", flush=True)
+    # print(f"Train samples: {len(dataset['train_df'])}")
+    # print(f"Dev samples: {len(dataset['dev_df'])}")
+    # print(f"Test samples: {len(dataset['test_df'])}")

@@ -838,16 +838,30 @@ class NeuralNetTrainer:
         
         if plot_type == 'bar':
             shap.plots.bar(explanation, max_display=20, show=False)
-            plt.title(f'Local Feature Importance (Bar Plot) for {split.upper()} Instance #{index}\n'
-                     f'True: {true_label} | Predicted: {predicted_label} (conf: {predicted_prob:.3f})\n'
-                     f'Explaining class: {label_encoder.inverse_transform([target_class])[0]}')
+            # plt.title(f'Local Feature Importance (Bar Plot) for {split.upper()} Instance #{index}\n'
+            #          f'True: {true_label} | Predicted: {predicted_label} (conf: {predicted_prob:.3f})\n'
+            #          f'Explaining class: {label_encoder.inverse_transform([target_class])[0]}')
+
+            labels = ["Immigration policies restrict healthcare access",
+                      "Immigrants as Victims",
+                      "Failed policies harm vulnerable immigrants",
+                      "Advocates support exploited immigrants",
+                      "Language barriers limit immigrant access to services",
+                      "English barriers limit immigrant integration",
+                      "Immigration Advocates as Heroes",
+                      "Government targets immigrants for deportation",
+                      "Illegal immigration increases crime and job competition"]
             
             # Customize y-axis for bar plot
             ax = plt.gca()
             current_labels = [label.get_text() for label in ax.get_yticklabels()]
-            ax.set_yticklabels([f"Feature {i+1}" for i in range(len(current_labels))])
-            plt.yticks(rotation=0)
-            
+            # Use custom labels if we have enough, otherwise fall back to generic labels
+            if len(labels) >= len(current_labels):
+                ax.set_yticklabels(labels[:len(current_labels)])
+            else:
+                ax.set_yticklabels([f"Feature {i+1}" for i in range(len(current_labels))])
+            plt.yticks(rotation=0, fontsize=10)
+
         elif plot_type == 'waterfall':
             shap.plots.waterfall(explanation, max_display=20, show=False)
             plt.title(f'Local Feature Importance (Waterfall Plot) for {split.upper()} Instance #{index}\n'

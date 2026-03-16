@@ -38,8 +38,4 @@ HOST_IP=$(hostname -i)
 
 echo "Generating chain verbalizations for ${source}_${domain}."
 
-# python3 ./annotation/annotate_chains.py -c "immigration" --host $host_ip --workers 8 --save_interval 50
-
-# python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 4 --domain "${domain}" --save_interval 25
-
 python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --source "${source}" --domain "${domain}" --excerpt 4 --save_interval 3
