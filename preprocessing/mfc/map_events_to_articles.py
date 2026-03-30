@@ -27,7 +27,7 @@ def get_line_from_corpus(file, line_number):
                 return line
 
 
-def generate_event_2_articles_map(mfc_corpus, processed_corpus, po_tuple_features, doc_2_sent):
+def generate_event_2_mfc_map(mfc_corpus, domain, processed_corpus, po_tuple_features, doc_2_sent):
     print('inside generate_event_2_mfc_map')
 
     with open(po_tuple_features, 'rb') as svos_pkl_file:

@@ -79,3 +79,13 @@ python3 ./preprocessing/generate_po_tuple_features.py \
     --use_all_svos
 
 echo "generate_po_tuple_features.py done"
+
+# PMapping each event (and frequency) to its original post and sentence
+python3 ./preprocessing/${source}/map_events_to_articles.py \
+  --partisanship_corpus ./data/${source}/${corpus}/corpus.json \
+  --processed_corpus ./data/${source}/${corpus}/corpus.txt \
+  --po_tuple_features ./data/${source}/${corpus}/po_tuple_features_all_svos.pk \
+  --doc_2_sent ./data/${source}/${corpus}/doc_id_2_sent_ids_corpus_labeled.json \
+  --output_file ./data/${source}/${corpus}/processed_corpus.json
+
+echo "map_article_event_freq.py done"
