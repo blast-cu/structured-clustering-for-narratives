@@ -1,0 +1,81 @@
+#!/bin/bash
+
+#SBATCH --account=blanca-curc-gpu
+#SBATCH --mail-user=roda9210@colorado.edu
+#SBATCH --mail-type=END,FAIL
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=4
+#SBATCH --time=1-00:00:00
+#SBATCH --qos=blanca-curc-gpu
+#SBATCH --partition=blanca-curc-gpu
+#SBATCH --gres=gpu:1
+#SBATCH --mem=50G
+#SBATCH --job-name=event_preprocess
+#SBATCH --output=logs/event.%j.log
+
+module load anaconda
+conda activate event
+
+mkdir -p "$SLURM_SCRATCH/cache/HF"
+
+export HF_HOME="$SLURM_SCRATCH/cache/HF"
+export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
+
+python3 -m spacy download en_core_web_lg
+
+source="reddit" # mfc or partisanship
+corpus="parkinsons"
+
+# Generate corpus.txt
+python3 ./preprocessing/${source}/gen_corpus.py \
+    --input_file ./data/${source}/${corpus}/corpus.json \
+    --save_path ./data/${source}/${corpus}/
+
+echo "gen_corpus.py done"
+
+
+# Parse Corpus and Extract Subject-Verb-Object Triplets
+python3 ./preprocessing/parse_corpus_and_extract_svo.py \
+    --is_sentence 1 \
+    --input_file ./data/${source}/${corpus}/corpus.txt \
+    --save_path ./data/${source}/${corpus}/corpus_parsed_svo.pk
+
+echo "parse_corpus_and_extract_svo.py done"
+
+
+# Select Salient Verb Lemmas and Object Heads
+python3 ./preprocessing/select_salient_terms.py \
+    --corpus_w_svo_pickle ./data/${source}/${corpus}/corpus_parsed_svo.pk \
+    --min_verb_freq 3 \
+    --min_obj_freq 3 \
+    --top_verb_ratio 0.8 \
+    --top_obj_ratio 0.8
+
+echo "select_salient_terms.py done"
+
+
+# Generate Features for Each Salient <Predicate Lemma, Object Head> Mention
+python3 ./preprocessing/generate_po_mention_features.py \
+    --corpus_w_svo_pickle ./data/${source}/${corpus}/corpus_parsed_svo.pk \
+    --top_k 50 \
+    --gpu_id 0
+
+echo "generate_po_mention_features.py done"
+
+
+# Disambiguate Predicate Senses
+python3 ./preprocessing/disambiguate_verb_sense.py \
+    --mention_file ./data/${source}/${corpus}/corpus_parsed_svo_salient_po_mention_features.pk \
+    --save_path ./data/${source}/${corpus}/po_mention_disambiguated.pk
+
+echo "disambiguate_verb_sense.py done"
+
+
+# Generate Features for Each Salient <Predicate Sense, Object Head> Tuples
+python3 ./preprocessing/generate_po_tuple_features.py \
+    --mention_file ./data/${source}/${corpus}/corpus_parsed_svo_salient_po_mention_features.pk \
+    --sense_mapping ./data/${source}/${corpus}/po_mention_disambiguated.pk \
+    --save_file ./data/${source}/${corpus}/po_tuple_features_all_svos.pk \
+    --use_all_svos
+
+echo "generate_po_tuple_features.py done"
