@@ -195,5 +195,6 @@ ollama_log*.txt
 !/data/mfc/guncontrol/.gitkeep
 !/data/partisanship/immigration/.gitkeep
 !/data/partisanship/guncontrol/.gitkeep
+!/data/reddit/parkinsons/.gitkeep
 /annotation/explore.py
 /visualizations/
