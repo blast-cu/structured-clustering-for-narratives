@@ -26,7 +26,7 @@ def generate_event_2_posts_map(reddit_corpus, processed_corpus, po_tuple_feature
             doc_id_2_sent_ids = json.load(json_file)
             for doc_id in tqdm(doc_id_2_sent_ids):
                 sent_ids = doc_id_2_sent_ids[doc_id]
-                doc_dict = {'corpus_id': reddit_corpus_dict[id],
+                doc_dict = {'corpus_id': reddit_corpus_dict['id'],
                             'text': reddit_corpus_dict[doc_id]['text'],
                             'sentences': {},
                             'datetime': reddit_corpus_dict[doc_id]['datetime']}
