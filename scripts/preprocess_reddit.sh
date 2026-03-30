@@ -23,8 +23,8 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 python3 -m spacy download en_core_web_lg
 
-source="reddit" # mfc or partisanship
-corpus="parkinsons"
+source="reddit"
+corpus="longcovid" # parkinsons or longcovid
 
 # Generate corpus.txt
 python3 ./preprocessing/${source}/gen_corpus.py \
