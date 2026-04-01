@@ -46,10 +46,10 @@ echo "parse_corpus_and_extract_svo.py done"
 # Select Salient Verb Lemmas and Object Heads
 python3 ./preprocessing/select_salient_terms.py \
     --corpus_w_svo_pickle ./data/${source}/${corpus}/corpus_parsed_svo.pk \
-    --min_verb_freq 3 \
-    --min_obj_freq 3 \
-    --top_verb_ratio 0.8 \
-    --top_obj_ratio 0.8
+    --min_verb_freq 1 \
+    --min_obj_freq 1 \
+    --top_verb_ratio 1.0 \
+    --top_obj_ratio 1.0
 
 echo "select_salient_terms.py done"
 

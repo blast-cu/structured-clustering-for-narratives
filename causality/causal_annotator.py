@@ -9,7 +9,7 @@ import threading
 from pyhocon import ConfigFactory
 from tqdm import tqdm
 
-from causality.schemas import CausalPrediction
+from schemas import CausalPrediction
 from utils.ollama_client import Ollama
 
 
