@@ -2,6 +2,11 @@ from pydantic import BaseModel, Field
 from typing import List
 from enum import Enum
 
+
+class Prediction(str, Enum):
+    CAUSAL = "causal"
+    NONE = "none"
+
 class GunControlCharacterGroup(str, Enum):
     POLITICIANS = "Politicians"
     GUN_CONTROL_ADVOCATES = "Gun Control Advocates"
