@@ -40,4 +40,11 @@ HOST_IP=$(hostname -i)
 
 echo "Generating cluster themes for ${source}_${domain}."
 
-python3 ./annotation/cluster_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --save_interval 5
+#python3 ./annotation/cluster_analysis.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "${domain}" --save_interval 5
+
+python -m annotation.reddit_cluster_analyzer \
+    -c ${source}_${domain} \
+    --host ${HOST_IP} \
+    --port ${OLLAMA_PORT} \
+    --domain "Parkinson's Disease" \
+    --clusters_file data/reddit/parkinsons/clustering/clusters_150_0.0.pickle

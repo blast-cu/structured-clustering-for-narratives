@@ -199,3 +199,4 @@ ollama_log*.txt
 !/data/reddit/longcovid/.gitkeep
 /annotation/explore.py
 /visualizations/
+/notebooks/
