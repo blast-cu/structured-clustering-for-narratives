@@ -1,17 +1,17 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blanca-clearlab1
 #SBATCH --mail-user=roda9210@colorado.edu
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=FAIL,END
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=10
-#SBATCH --time=6-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --gres=gpu:3
-#SBATCH --mem=10G
-#SBATCH --job-name=pg_verbalize_chains
-#SBATCH --output=logs/data.%j.log
+#SBATCH --ntasks-per-node=4
+#SBATCH --time=7-00:00:00
+#SBATCH --qos=blanca-clearlab1
+#SBATCH --partition=blanca-clearlab1
+#SBATCH --gres=gpu:h100_80gb:1
+#SBATCH --mem=30G
+#SBATCH --job-name=parkinsons_verbalize_chains
+#SBATCH --output=logs/verbalize.%j.log
 
 source ~/.bashrc
 
@@ -23,8 +23,8 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
-source="partisanship" # mfc or partisanship
-domain="guncontrol" # immigration or guncontrol
+source="reddit" # mfc or partisanship
+domain="longcovid" # immigration or guncontrol
 
 echo "Starting up Ollama server"
 OLLAMA_PORT=9940
@@ -38,4 +38,4 @@ HOST_IP=$(hostname -i)
 
 echo "Generating chain verbalizations for ${source}_${domain}."
 
-python3 ./annotation/chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --source "${source}" --domain "${domain}" --excerpt 4 --save_interval 3
+python3 ./annotation/reddit_chain_verbalizer.py -c "${source}_${domain}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "Long Covid Subreddit" --save_interval 3

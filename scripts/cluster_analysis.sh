@@ -1,14 +1,14 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blanca-blast-lecs
 #SBATCH --mail-user=roda9210@colorado.edu
-#SBATCH --mail-type=FAIL
+#SBATCH --mail-type=FAIL,END
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=10
+#SBATCH --ntasks-per-node=4
 #SBATCH --time=7-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --gres=gpu:3
+#SBATCH --qos=blanca-blast-lecs
+#SBATCH --partition=blanca-blast-lecs
+#SBATCH --gres=gpu:h100_80gb:1
 #SBATCH --mem=40G
 #SBATCH --job-name=cluster_analysis
 #SBATCH --output=logs/data.%j.log
@@ -23,13 +23,15 @@ mkdir -p "$SLURM_SCRATCH/cache/HF"
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
-source="mfc" # mfc or partisanship
-domain="guncontrol" # immigration or guncontrol
+source="reddit" # mfc or partisanship
+domain="parkinsons" # immigration or guncontrol
 
 echo "Starting up Ollama server"
 OLLAMA_PORT=9980
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
-# OLLAMA_NUM_PARALLEL=4
+OLLAMA_NUM_PARALLEL=2
+OLLAMA_MAX_LOADED_MODELS=3 
+OLLAMA_FLASH_ATTENTION=0
 
 nohup ollama serve > ./data/${source}/${domain}/ollama_log.txt 2>&1 &
 
