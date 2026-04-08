@@ -14,6 +14,44 @@ from clustering.metrics.cluster_metrics import ClusterMetrics
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 
+def save_clustering_data(clustering_data, path):
+    """Save clustering results in a numpy-version-agnostic format.
+
+    Arrays are written to a .npz file; only the cluster count (a plain int)
+    goes into the .pickle so the file is safe to unpickle across numpy versions.
+
+    Args:
+        clustering_data: dict with keys number_cluster, embeddings, labels, cluster_centers
+        path: base path without extension, e.g. '.../clusters_75_0.0'
+    """
+    np.savez(
+        path + ".npz",
+        embeddings=clustering_data["embeddings"],
+        labels=clustering_data["labels"],
+        cluster_centers=clustering_data["cluster_centers"],
+    )
+    with open(path + ".pickle", "wb") as f:
+        pickle.dump({"number_cluster": clustering_data["number_cluster"]}, f)
+
+
+def load_clustering_data(path):
+    """Load clustering results saved by save_clustering_data.
+
+    Args:
+        path: base path without extension, or full path ending in .pickle or .npz
+    """
+    base = path.replace(".pickle", "").replace(".npz", "")
+    with open(base + ".pickle", "rb") as f:
+        meta = pickle.load(f)
+    arrays = np.load(base + ".npz")
+    return {
+        "number_cluster": meta["number_cluster"],
+        "embeddings":     arrays["embeddings"],
+        "labels":         arrays["labels"],
+        "cluster_centers": arrays["cluster_centers"],
+    }
+
+
 def flatten_verbalizations(data):
     """Flatten causal_verbalizations.pickle into processed_chains and chain_sents.
 

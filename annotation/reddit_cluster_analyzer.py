@@ -11,7 +11,7 @@ sys.modules['schemas'] = _schemas
 
 from annotation.cluster_analysis import ClusterAnalyzer
 from annotation.schemas import ClusterTheme
-from clustering.reddit_kmeans import flatten_verbalizations
+from clustering.reddit_kmeans import flatten_verbalizations, load_clustering_data
 
 
 class RedditClusterAnalyzer(ClusterAnalyzer):
@@ -111,8 +111,7 @@ if __name__ == '__main__':
     config = ConfigFactory.parse_file('./config.conf')[args.c]
 
     # Load clustering results
-    with open(args.clusters_file, 'rb') as f:
-        clustering_data = pickle.load(f)
+    clustering_data = load_clustering_data(args.clusters_file)
 
     # Load verbalizations
     with open(config['causal_verbalizations_path'], 'rb') as f:

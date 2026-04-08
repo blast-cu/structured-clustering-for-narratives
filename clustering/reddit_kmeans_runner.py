@@ -14,7 +14,7 @@ import annotation.schemas as _schemas
 sys.modules['schemas'] = _schemas
 
 from clustering.metrics.cluster_metrics import ClusterMetrics
-from clustering.reddit_kmeans import flatten_verbalizations
+from clustering.reddit_kmeans import flatten_verbalizations, save_clustering_data
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
@@ -106,10 +106,9 @@ if __name__ == "__main__":
         print(f"  Calinski-Harabasz:   {metrics['calinski_harabasz']:.2f}", flush=True)
         print(f"  WCSS:                {metrics['cohesion']:.2f}", flush=True)
 
-        out_path = os.path.join(clusters_path, f"clusters_{k}_0.0.pickle")
-        with open(out_path, "wb") as f:
-            pickle.dump(clustering_data, f, protocol=pickle.HIGHEST_PROTOCOL)
-        print(f"  Saved -> {out_path}", flush=True)
+        out_path = os.path.join(clusters_path, f"clusters_{k}_0.0")
+        save_clustering_data(clustering_data, out_path)
+        print(f"  Saved -> {out_path}.(pickle|npz)", flush=True)
 
     print_summary(all_metrics)
 
