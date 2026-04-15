@@ -197,6 +197,7 @@ ollama_log*.txt
 !/data/partisanship/guncontrol/.gitkeep
 !/data/reddit/parkinsons/.gitkeep
 !/data/reddit/longcovid/.gitkeep
+!/data/reddit/covid_vaccinated/.gitkeep
 /annotation/explore.py
 /visualizations/
 /notebooks/
