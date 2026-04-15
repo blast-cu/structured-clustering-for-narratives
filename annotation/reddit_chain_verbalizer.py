@@ -131,7 +131,7 @@ class RedditChainVerbalizer(ChainVerbalizer):
                 reasoning_model_response = self.reasoning_model.chat(
                     self.reasoning_system_prompt,
                     reasoning_user_prompt,
-                    think=True,
+                    think=self.think,
                     num_ctx=self.num_ctx)
 
                 _, json_content = self.extract_thinking_response(reasoning_model_response)

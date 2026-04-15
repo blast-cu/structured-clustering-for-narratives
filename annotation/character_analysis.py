@@ -33,6 +33,7 @@ class CharacterAnalyzer:
                                    config['temperature'])
 
         self.num_ctx = config['num_ctx']
+        self.think = config['think']
 
         if use_excerpt:
             with open("./annotation/prompts/character_analysis/excerpt_system_prompt.md", 'r', encoding='utf-8') as file:
@@ -165,7 +166,7 @@ class CharacterAnalyzer:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
                                                                      reasoning_user_prompt,
-                                                                     think=True,
+                                                                     think=self.think,
                                                                      num_ctx=self.num_ctx)
                 if domain == 'Gun Control':
                     structured_response = self.output_model.chat(self.structured_output_system_prompt,

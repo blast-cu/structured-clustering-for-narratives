@@ -67,7 +67,7 @@ class RedditClusterAnalyzer(ClusterAnalyzer):
                 reasoning_model_response = self.reasoning_model.chat(
                     self.reasoning_system_prompt,
                     reasoning_user_prompt,
-                    think=True,
+                    think=self.think,
                     num_ctx=self.num_ctx)
 
                 structured_response = self.output_model.chat(

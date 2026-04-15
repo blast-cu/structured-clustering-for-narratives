@@ -33,6 +33,7 @@ class CausalAnnotator:
                                    config['temperature'])
 
         self.num_ctx = config['num_ctx']
+        self.think = config['think']
 
         with open("./causality/prompts/system_prompt.md", 'r', encoding='utf-8') as file:
             self.reasoning_system_prompt = file.read()
@@ -150,7 +151,7 @@ class CausalAnnotator:
                 reasoning_model_response = self.reasoning_model.chat(
                     self.reasoning_system_prompt,
                     reasoning_user_prompt,
-                    think=True,
+                    think=self.think,
                     num_ctx=self.num_ctx)
 
                 structured_response = self.output_model.chat(

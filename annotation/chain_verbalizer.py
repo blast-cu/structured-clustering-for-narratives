@@ -31,6 +31,7 @@ class ChainVerbalizer:
                                     self.config['temperature'])
         
         self.num_ctx = self.config['num_ctx']
+        self.think = self.config['think']
 
         if excerpt > 0:
             with (open("./annotation/prompts/chain_verbalization/excerpt_system_prompt.md", 'r', encoding='utf-8') as
@@ -206,7 +207,7 @@ class ChainVerbalizer:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
                                                                      reasoning_user_prompt,
-                                                                     think=True,
+                                                                     think=self.think,
                                                                      num_ctx=self.num_ctx)
 
                 _, json_content = self.extract_thinking_response(reasoning_model_response)

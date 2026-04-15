@@ -33,6 +33,7 @@ class ClusterAnalyzer:
                                    config['temperature'])
 
         self.num_ctx = config['num_ctx']
+        self.think = config['think']
         self.chains_per_cluster = chains_per_cluster
 
         random.seed(config["seed"])
@@ -280,7 +281,7 @@ class ClusterAnalyzer:
             try:
                 reasoning_model_response = self.reasoning_model.chat(self.reasoning_system_prompt,
                                                                      reasoning_user_prompt,
-                                                                     think=True,
+                                                                     think=self.think,
                                                                      num_ctx=self.num_ctx)
                 structured_response = self.output_model.chat(self.structured_output_system_prompt,
                                                              reasoning_model_response,
