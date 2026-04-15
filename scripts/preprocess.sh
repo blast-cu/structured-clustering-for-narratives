@@ -9,7 +9,7 @@
 #SBATCH --qos=blanca-curc-gpu
 #SBATCH --partition=blanca-curc-gpu
 #SBATCH --gres=gpu:1
-#SBATCH --mem=100G
+#SBATCH --mem=20G
 #SBATCH --job-name=event_preprocess
 #SBATCH --output=logs/event.%j.log
 

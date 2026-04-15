@@ -1,15 +1,15 @@
 #!/bin/bash
 
-#SBATCH --account=blanca-curc-gpu
+#SBATCH --account=blanca-blast-lecs
 #SBATCH --mail-user=roda9210@colorado.edu
 #SBATCH --mail-type=END,FAIL
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=4
 #SBATCH --time=1-00:00:00
-#SBATCH --qos=blanca-curc-gpu
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --gres=gpu:1
-#SBATCH --mem=50G
+#SBATCH --qos=blanca-blast-lecs
+#SBATCH --partition=blanca-blast-lecs
+#SBATCH --gres=gpu:h100_2g.20gb
+#SBATCH --mem=20G
 #SBATCH --job-name=event_preprocess
 #SBATCH --output=logs/event.%j.log
 
@@ -24,7 +24,7 @@ export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 python3 -m spacy download en_core_web_lg
 
 source="reddit"
-corpus="longcovid" # parkinsons or longcovid
+corpus="longcovid" # parkinsons or longcovid or covid_vaccinated
 
 # Generate corpus.txt
 python3 ./preprocessing/${source}/gen_corpus.py \
