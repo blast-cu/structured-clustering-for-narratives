@@ -24,7 +24,7 @@ export HF_HOME="$SLURM_SCRATCH/cache/HF"
 export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
 
 source="reddit" # mfc or partisanship
-domain="parkinsons" # immigration or guncontrol
+domain="longcovid" # immigration or guncontrol
 
 echo "Starting up Ollama server"
 OLLAMA_PORT=9980
@@ -48,5 +48,5 @@ python -m annotation.reddit_cluster_analyzer \
     -c ${source}_${domain} \
     --host ${HOST_IP} \
     --port ${OLLAMA_PORT} \
-    --domain "Parkinson's Disease" \
-    --clusters_file data/reddit/parkinsons/clustering/clusters_150_0.0.pickle
+    --domain "Long COVID" \
+    --clusters_file data/reddit/longcovid/clustering/clusters_150_0.0.pickle
