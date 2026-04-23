@@ -19,7 +19,8 @@ conda activate event
 mkdir -p "$SLURM_SCRATCH/cache/HF"
 
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
-export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
+export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
+export NLTK_DATA=/scratch/alpine/roda9210/nltk_data
 
 python3 -m spacy download en_core_web_lg
 

@@ -14,19 +14,24 @@
 #SBATCH --output=logs/causal.%j.log
 
 module load anaconda
-conda activate event
+conda activate struct
+
+PYTHON=/projects/roda9210/software/anaconda/envs/struct/bin/python
 
 mkdir -p "$SLURM_SCRATCH/cache/HF"
 
 export HF_HOME="$SLURM_SCRATCH/cache/HF"
-export PYTHONPATH=/projects/roda9210/structured-clustering-for-narratives
+export PYTHONPATH=/scratch/alpine/roda9210/structured-clustering-for-narratives
 
 source="reddit"
-corpus="longcovid" # parkinsons or longcovid
+corpus="parkinsons" # parkinsons or longcovid
+
+source ~/.bashrc
 
 echo "Starting up Ollama server"
 OLLAMA_PORT=9920
 OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}
+OLLAMA_NUM_PARALLEL=2
 nohup ollama serve > ./data/${source}/${corpus}/ollama_log.txt 2>&1 &
 
 echo "Waiting for Ollama server to start"
@@ -34,4 +39,5 @@ sleep 1m
 
 HOST_IP=$(hostname -i)
 
-python3 ./causality/causal_annotator.py -c "${source}_${corpus}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "Long Covid Subreddits"
+
+$PYTHON ./causality/causal_annotator.py -c "${source}_${corpus}" --host ${HOST_IP} --port ${OLLAMA_PORT} --workers 3 --domain "Parkinson's Disease"
